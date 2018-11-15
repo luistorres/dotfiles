@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.6.1
+git clone https://github.com/asdf-vm/asdf.git ~/.asdf
 
 source ~/.zshrc
 
