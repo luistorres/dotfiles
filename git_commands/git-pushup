@@ -1,0 +1,4 @@
+##!/bin/sh
+
+current=$(git branchname)
+git push --set-upstream origin $current

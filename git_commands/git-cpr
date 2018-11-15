@@ -1,0 +1,29 @@
+#!/bin/zsh
+
+autoload colors; colors
+
+current=`git branch | sed -n '\/* /s///p'`
+destiny=${1:-develop}
+
+# 1. Update destiny
+git fetch -q
+git checkout $destiny -q
+[[ $? == 0 ]] || (echo "failed to switch to $destiny" && exit 1)
+git rebase -q
+
+# 2. rebase PR branch
+git checkout $current -q
+git rebase $destiny -q
+[[ $? == 0 ]] || (echo "failed to rebase from $destiny" && exit 1)
+# git pr-description $current | pbcopy || true
+git rebase -i $destiny
+[[ $? == 0 ]] || (echo "failed to rebase from $current against $destiny" && exit 1)
+
+# 3. merge
+git push -f -q
+git checkout $destiny -q
+git merge --ff-only $current
+git push
+
+## 4. remove branch
+git nuke $current $destiny
