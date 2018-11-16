@@ -1,0 +1,76 @@
+GLOBAL
+
+{
+  "BTTTriggerType" : 1003,
+  "BTTTriggerTypeDescription" : "Button 3",
+  "BTTTriggerClass" : "BTTTriggerTypeNormalMouse",
+  "BTTPredefinedActionType" : 77,
+  "BTTPredefinedActionName" : "3F Swipe Left (Page Back)",
+  "BTTEnabled2" : 1,
+  "BTTUUID" : "D2094403-1127-43FE-B9C0-C500DC6D91C0",
+  "BTTEnabled" : 1,
+  "BTTOrder" : 1,
+  "BTTIconData" : "",
+  "BTTAlternateIconData" : ""
+}
+
+{
+  "BTTTriggerType" : 1004,
+  "BTTTriggerTypeDescription" : "Button 4",
+  "BTTTriggerClass" : "BTTTriggerTypeNormalMouse",
+  "BTTPredefinedActionType" : 78,
+  "BTTPredefinedActionName" : "3F Swipe Right (Page Forward)",
+  "BTTEnabled2" : 1,
+  "BTTUUID" : "D8B1B573-40E4-42BC-B431-A971B1798D50",
+  "BTTEnabled" : 1,
+  "BTTOrder" : 0,
+  "BTTIconData" : "",
+  "BTTAlternateIconData" : ""
+}
+
+atom 
+
+[
+  {
+    "BTTTriggerType" : 1002,
+    "BTTTriggerTypeDescription" : "Middle Mouse Button",
+    "BTTTriggerClass" : "BTTTriggerTypeNormalMouse",
+    "BTTPredefinedActionType" : -1,
+    "BTTPredefinedActionName" : "No Action",
+    "BTTShortcutToSend" : "58,31",
+    "BTTEnabled2" : 1,
+    "BTTUUID" : "C029034B-3AC9-446E-9D57-50EF0AF94EDF",
+    "BTTEnabled" : 1,
+    "BTTOrder" : 2,
+    "BTTIconData" : "",
+    "BTTAlternateIconData" : ""
+  },
+  {
+    "BTTTriggerType" : 1003,
+    "BTTTriggerTypeDescription" : "Button 3",
+    "BTTTriggerClass" : "BTTTriggerTypeNormalMouse",
+    "BTTPredefinedActionType" : -1,
+    "BTTPredefinedActionName" : "No Action",
+    "BTTShortcutToSend" : "58,44",
+    "BTTEnabled2" : 1,
+    "BTTUUID" : "DA235C62-B102-4FDC-87D8-55B055D122B6",
+    "BTTEnabled" : 1,
+    "BTTOrder" : 0,
+    "BTTIconData" : "",
+    "BTTAlternateIconData" : ""
+  },
+  {
+    "BTTTriggerType" : 1004,
+    "BTTTriggerTypeDescription" : "Button 4",
+    "BTTTriggerClass" : "BTTTriggerTypeNormalMouse",
+    "BTTPredefinedActionType" : -1,
+    "BTTPredefinedActionName" : "No Action",
+    "BTTShortcutToSend" : "58,56,44",
+    "BTTEnabled2" : 1,
+    "BTTUUID" : "E7738ECC-F61F-4B9B-B0F5-EB98B7E5494A",
+    "BTTEnabled" : 1,
+    "BTTOrder" : 1,
+    "BTTIconData" : "",
+    "BTTAlternateIconData" : ""
+  }
+]
