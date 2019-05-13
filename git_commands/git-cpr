@@ -3,7 +3,7 @@
 autoload colors; colors
 
 current=`git branch | sed -n '\/* /s///p'`
-destiny=${1:-develop}
+destiny=${1:-master}
 
 # 1. Update destiny
 git fetch -q
