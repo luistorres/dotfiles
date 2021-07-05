@@ -1,2 +1,0 @@
-cd apps/merchant_client
-mix phx.routes

@@ -1,5 +1,0 @@
-bin/setup
-source .env.dev
-mix db.reset
-mix db.seed
-mix db.dev.prime
