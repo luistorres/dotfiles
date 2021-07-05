@@ -68,7 +68,7 @@ POWERLEVEL9K_SHORTEN_DIR_LENGTH=3
 # Custom plugins may be added to ~/.oh-my-zsh/custom/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git bundler osx rake ruby asdf aws brew docker npm vscode yarn)
+plugins=(git bundler osx rake ruby aws brew docker npm vscode yarn sudo zsh-autosuggestions zsh-syntax-highlighting asdf)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -80,11 +80,12 @@ source $ZSH/oh-my-zsh.sh
 # export LANG=en_US.UTF-8
 
 # Preferred editor for local and remote sessions
-# if [[ -n $SSH_CONNECTION ]]; then
-#   export EDITOR='vim'
-# else
-#   export EDITOR='mvim'
-# fi
+if [[ -n $SSH_CONNECTION ]]; then
+  export EDITOR='vim'
+else
+  export EDITOR='nvim'
+  export VISUAL='nvim'
+fi
 
 # Compilation flags
 # export ARCHFLAGS="-arch x86_64"
@@ -109,10 +110,13 @@ alias gf='git fetch'
 alias grb='git rebase'
 alias grbi='git rebase -i'
 alias gs='git status'
-alias gb="git branch"
-alias gu="git fetch && git rebase"
-alias gfp="git fetch --prune --all"
-alias rmigrate="rails db:migrate && rails db:migrate RAILS_ENV=development"
+alias gb='git branch'
+alias gu='git fetch && git rebase'
+alias gfp='git fprune'
+alias rmigrate='rails db:migrate && rails db:migrate RAILS_ENV=development'
+alias vi='vim'
+alias vim='nvim'
+
 # avoids that autcomplete for git gets broke
 compdef g=git
 compdef gl=git
@@ -129,7 +133,6 @@ export PATH=~/dotfiles/helpers:$PATH
 export PATH=~/dotfiles/git_commands:$PATH
 export GRADLE_HOME=/usr/local/opt/gradle
 export PATH="$PATH:$GRADLE_HOME/bin"
-# export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -140,3 +143,7 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="$HOME/.yarn/bin/:$PATH"
 
 export PATH="/usr/local/opt/python/libexec/bin:$PATH"
+
+export LC_ALL=en_GB.UTF-8
+
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
