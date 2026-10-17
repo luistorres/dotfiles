@@ -79,7 +79,7 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git bundler macos asdf rake ruby aws brew docker npm vscode yarn sudo zsh-autosuggestions zsh-syntax-highlighting web-search direnv)
+plugins=(git bundler macos asdf aws brew docker npm vscode yarn sudo zsh-autosuggestions zsh-syntax-highlighting web-search direnv)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -121,13 +121,12 @@ alias gs='git status'
 alias gb='git branch'
 alias gu='git fetch && git rebase'
 alias gfp='git fprune'
-alias rmigrate='rails db:migrate && rails db:migrate RAILS_ENV=development'
 alias vi='vim'
 alias vim='nvim'
 alias p='pnpm'
 alias aaws='aws --cli-auto-prompt'
 alias awslogin='aws sso login --profile'
-alias prwatch='claude --model claude-sonnet-4-6 "/loop 30m run the pr-review-watch skill"'
+alias prwatch='claude --model claude-sonnet-5-5 "/loop 30m run the pr-review-watch skill"'
 
 export PATH=~/dotfiles/git_commands:$PATH
 
@@ -153,13 +152,6 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:/opt/homebrew
 # Added by LM Studio CLI (lms)
 export PATH="$PATH:$HOME/.lmstudio/bin"
 # End of LM Studio CLI section
-
-
-[[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
-
-# Added by Antigravity
-export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
-
 
 export PATH="$HOME/.local/bin:$PATH"
 
