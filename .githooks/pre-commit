@@ -4,6 +4,7 @@ set -euo pipefail
 secrets='gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|sk-(ant|or|proj)-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9]{32,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[Bb]earer [A-Za-z0-9._~+/=-]{20,}'
 home_path='(/Users|/home)/[A-Za-z0-9._-]+/'
 terms_file="$(git rev-parse --git-common-dir)/info/private-terms"
+if [ "${1:-}" = --message ]; then name=commit-msg; else name=pre-commit; fi
 
 terms=$(mktemp)
 trap 'rm -f "$terms"' EXIT
@@ -14,30 +15,43 @@ fi
 
 status=0
 report() {
-  echo "pre-commit: $1: $2" >&2
+  echo "$name: $1: $2" >&2
   status=1
 }
 
 # grep exits 2 on an error; treating that as "no match" would let the commit through.
 matches() {
   local rc=0
-  grep -q "$@" <<< "$added" || rc=$?
+  grep -q "$@" <<< "$text" || rc=$?
   if [ "$rc" -gt 1 ]; then
-    echo "pre-commit: $f: grep failed, blocking to be safe" >&2
+    echo "$name: grep failed, blocking to be safe" >&2
     exit 2
   fi
   [ "$rc" -eq 0 ]
 }
+
+scan() {
+  text=$2
+  if matches -E "$secrets"; then report "$1" "possible secret${3:-}"; fi
+  if matches -E "$home_path"; then report "$1" "absolute home path${3:-}"; fi
+  if [ -s "$terms" ] && matches -i -F -f "$terms"; then report "$1" "private term${3:-}"; fi
+}
+
+if [ "$name" = commit-msg ]; then
+  # git passes the raw message: comment lines, and with -v a diff below the scissors line.
+  message=$(sed -e '/^# -* >8 -*$/,$d' -e '/^#/d' "$2")
+  scan "commit message" "$message"
+  exit "$status"
+fi
 
 while IFS= read -r -d '' f; do
   if [ "${f##*/}" = .DS_Store ]; then
     report "$f" ".DS_Store file"
     continue
   fi
+  scan "$f" "$f" " in the file name"
   added=$(git diff --cached -U0 --no-color --no-ext-diff -- "$f" | awk '/^@@/ { h = 1; next } h && /^\+/ { print substr($0, 2) }')
-  if matches -E "$secrets"; then report "$f" "possible secret"; fi
-  if matches -E "$home_path"; then report "$f" "absolute home path"; fi
-  if [ -s "$terms" ] && matches -i -F -f "$terms"; then report "$f" "private term"; fi
+  scan "$f" "$added"
 done < <(git diff --cached --name-only -z --diff-filter=ACMRT)
 
 exit "$status"

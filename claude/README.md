@@ -24,7 +24,7 @@ git clone https://github.com/luistorres/dotfiles.git ~/dotfiles
 ~/dotfiles/claude/install.sh
 ```
 
-Then restart Claude Code, or run `/reload-plugins`. The installer needs network access to register the GitHub marketplaces and install their plugins. It is safe to re-run: anything it replaces is first moved aside as `<name>.bak-<timestamp>-<pid>`, and it prints a diff when an installed `CLAUDE.md` or `RTK.md` differs from this folder. If `gh` isn't logged in yet, it skips the MCP server with a warning; log in and run it again.
+Then restart Claude Code, or run `/reload-plugins`. The installer needs network access to register the GitHub marketplaces and install their plugins. If a step fails, it carries on with the rest, lists what failed and exits non-zero; fix the cause and run it again. It is safe to re-run: anything it replaces is first moved into `~/.claude/dotfiles-backups/<timestamp>-<pid>/`, and it prints a diff when an installed `CLAUDE.md` or `RTK.md` differs from this folder. If `gh` isn't logged in yet, it skips the MCP server with a warning; log in and run it again.
 
 ## Editing
 
@@ -35,7 +35,7 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 
 ## Leak guard
 
-This repo is public. The installer points `core.hooksPath` at `.githooks`, whose `pre-commit` hook blocks staged additions that contain secret-shaped strings, absolute home paths or `.DS_Store` files, plus any term listed in `.git/info/private-terms` (one per line, case-insensitive, never committed; a fresh clone starts without it, so add your own). Binary files aren't scanned.
+This repo is public. The installer points `core.hooksPath` at `.githooks`, whose hooks block a commit when its added lines, file names or message contain a secret-shaped string, an absolute home path or a term listed in `.git/info/private-terms` (one per line, case-insensitive, never committed; a fresh clone starts without it, so add your own), and when it stages a `.DS_Store` file. Binary files aren't scanned.
 
 `claude/test.sh` tests the guard, the settings merge and the installer. The installer tests run offline in a scratch home folder: the remote marketplaces and plugins are recorded rather than fetched.
 

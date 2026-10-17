@@ -10,15 +10,24 @@ MCP_NAME=github_inline_comment
 LINKED=""
 BACKUPS=""
 WARNINGS=""
+FAILED=0
 
 warn() {
   echo "warning: $1" >&2
   WARNINGS="$WARNINGS  $1"$'\n'
 }
 
+fail() {
+  warn "$1"
+  FAILED=1
+}
+
+# Kept out of skills/ and commands/, where Claude Code would load a backed-up copy alongside the new link.
 backup() {
-  mv "$1" "$1.bak-$STAMP"
-  BACKUPS="$BACKUPS  $1.bak-$STAMP"$'\n'
+  local to="$DEST/dotfiles-backups/$STAMP/${1#"$DEST"/}"
+  mkdir -p "$(dirname "$to")"
+  mv "$1" "$to"
+  BACKUPS="$BACKUPS  $to"$'\n'
 }
 
 merge_settings() {
@@ -96,7 +105,8 @@ install_plugins() {
   local known name source id
   known=$(claude plugin marketplace list --json | jq -r '.[].name')
   while read -r name source; do
-    grep -qxF "$name" <<< "$known" || claude plugin marketplace add "$source" < /dev/null
+    grep -qxF "$name" <<< "$known" || claude plugin marketplace add "$source" < /dev/null ||
+      fail "could not add the $name marketplace"
   done << EOF
 claude-plugins-official anthropics/claude-plugins-official
 impeccable pbakaus/impeccable
@@ -106,7 +116,7 @@ flow-local $SRC/plugins/flow
 agent-atlas-local $SRC/plugins/agent-atlas
 EOF
   for id in $(jq -r '.enabledPlugins | keys[]' "$SRC/settings.json"); do
-    claude plugin install "$id" --scope user < /dev/null
+    claude plugin install "$id" --scope user < /dev/null || fail "could not install $id"
   done
 }
 
@@ -115,7 +125,7 @@ install_mcp() {
   if claude mcp get "$MCP_NAME" > /dev/null 2>&1; then return 0; fi
   if token=$(gh auth token 2> /dev/null) && [ -n "$token" ]; then
     claude mcp add --scope user --transport http "$MCP_NAME" https://api.githubcopilot.com/mcp/ \
-      --header "Authorization: Bearer $token"
+      --header "Authorization: Bearer $token" || fail "could not add the GitHub MCP server $MCP_NAME"
   else
     warn "GitHub MCP server $MCP_NAME not added: run gh auth login, then re-run install.sh"
   fi
@@ -139,6 +149,10 @@ main() {
   echo "Plugins: $(jq -r '.enabledPlugins | keys | join(" ")' "$SRC/settings.json")"
   if [ -n "$WARNINGS" ]; then printf 'Warnings:\n%s' "$WARNINGS"; fi
   echo "Restart Claude Code (or run /reload-plugins) to load plugins."
+  if [ "$FAILED" -ne 0 ]; then
+    echo "Some steps failed (see the warnings above); fix them and re-run install.sh." >&2
+    return 1
+  fi
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi

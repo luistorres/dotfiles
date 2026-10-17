@@ -54,6 +54,26 @@ test_guard_blocks_ds_store() {
   dir=$(guard_repo) && blocked "$dir" .DS_Store "x"
 }
 
+test_guard_blocks_term_in_file_name() {
+  local dir
+  dir=$(guard_repo) && blocked "$dir" zebracorp-notes.txt "Nothing private here"
+}
+
+test_guard_blocks_term_in_message() {
+  local dir
+  dir=$(guard_repo) && stage "$dir" notes.txt "Nothing private here" &&
+    ! git -C "$dir" commit -q -m "Fix the ZebraCorp flow" 2> "$dir.err" &&
+    grep -qF "commit-msg: commit message:" "$dir.err"
+}
+
+test_guard_message_skips_comments_and_verbose_diff() {
+  local dir
+  dir=$(guard_repo) && stage "$dir" notes.txt "Nothing private here" &&
+    printf '%s\n' "Clean subject" "# ZebraCorp in a comment" "# ------------------------ >8 ------------------------" \
+      "-/Us""ers/someone/x" > "$dir.msg" &&
+    git -C "$dir" commit -q --cleanup=scissors -F "$dir.msg"
+}
+
 test_guard_passes_clean() {
   local dir
   dir=$(guard_repo) && committed "$dir" notes.txt "Nothing private here"
@@ -164,9 +184,9 @@ EOF
   cat > "$h/bin/claude" << 'EOF'
 #!/bin/sh
 if [ "$1 $2 $3" = "plugin marketplace add" ]; then
-  case "$4" in /*) ;; *) echo "marketplace add $4" >> "$HOME/remote-calls"; exit 0 ;; esac
+  case "$4" in /*) ;; *) [ -z "${FAIL_REMOTE:-}" ] || exit 1; echo "marketplace add $4" >> "$HOME/remote-calls"; exit 0 ;; esac
 elif [ "$1 $2" = "plugin install" ]; then
-  case "$3" in *@flow-local | *@agent-atlas-local) ;; *) echo "install $3" >> "$HOME/remote-calls"; exit 0 ;; esac
+  case "$3" in *@flow-local | *@agent-atlas-local) ;; *) [ -z "${FAIL_REMOTE:-}" ] || exit 1; echo "install $3" >> "$HOME/remote-calls"; exit 0 ;; esac
 fi
 exec "$REAL_CLAUDE" "$@"
 EOF
@@ -223,25 +243,22 @@ remote_calls_recorded() {
 }
 
 first_run_backups() {
-  local h=$1
-  set -- "$h/.claude/skills/pr-create.bak-"*
-  [ -f "$1/SKILL.md" ] && [ ! -e "$1/pr-create" ] || { echo "pr-create directory not backed up"; return 1; }
-  set -- "$h/.claude/commands/code-review.md.bak-"*
-  [ -L "$1" ] || { echo "stale code-review.md link not backed up"; return 1; }
+  local b
+  b=$(echo "$1"/.claude/dotfiles-backups/*) &&
+    grep -qx old "$b/skills/pr-create/SKILL.md" && [ ! -e "$b/skills/pr-create/pr-create" ] &&
+    [ -L "$b/commands/code-review.md" ] || { echo "pre-existing paths not backed up as expected"; return 1; }
 }
+
+skills_hold_only_links() {
+  [ "$(ls -A "$1/.claude/skills" | wc -l | tr -d ' ')" = 12 ] || { echo "extra entries in skills/:"; ls -A "$1/.claude/skills"; return 1; }
+}
+
+backed_up() { (cd "$1/.claude/dotfiles-backups" && find . -mindepth 2 -maxdepth 2 | sed 's|^\./[^/]*/||' | LC_ALL=C sort | xargs); }
 
 nothing_cloned() { [ -z "$(ls -A "$1/.claude/plugins/marketplaces" 2> /dev/null)" ] || { echo "a marketplace was cloned"; return 1; }; }
 
-link_backups() {
-  local f n=0
-  for f in "$1"/.claude/skills/*.bak-* "$1"/.claude/hooks/*.bak-* "$1"/.claude/commands/*.bak-*; do
-    [ -L "$f" ] || [ -e "$f" ] && n=$((n + 1))
-  done
-  echo "$n"
-}
-
 test_install() {
-  local h before backups plugins
+  local h before plugins
   before=$(real_snapshot) && h=$(scratch_home) &&
     mkdir -p "$h/.claude/skills/pr-create" "$h/.claude/commands" &&
     echo old > "$h/.claude/skills/pr-create/SKILL.md" &&
@@ -249,7 +266,8 @@ test_install() {
 
   {
     in_home "$h" /bin/bash "$REPO/claude/install.sh" > "$h/run1.log" 2>&1 &&
-      links_point_at_repo "$h" && first_run_backups "$h" && copies_match_repo "$h" &&
+      links_point_at_repo "$h" && skills_hold_only_links "$h" && first_run_backups "$h" &&
+      check [ "$(backed_up "$h")" = "commands settings.json skills" ] && copies_match_repo "$h" &&
       settings_match_template "$h" && local_plugins_enabled "$h" && remote_calls_recorded "$h" &&
       nothing_cloned "$h" && check grep -q 'gh auth login' "$h/run1.log"
   } || { tail -n 30 "$h/run1.log"; return 1; }
@@ -257,17 +275,30 @@ test_install() {
   echo "local edit" >> "$h/.claude/CLAUDE.md" &&
     jq '.hooks.SessionStart = [{"hooks":[{"type":"command","command":"foreign-start"}]}]' "$h/.claude/settings.json" > "$h/s.json" &&
     mv "$h/s.json" "$h/.claude/settings.json" &&
-    backups=$(link_backups "$h") && plugins=$(plugin_list "$h") || { echo "edits before the second run failed"; return 1; }
+    plugins=$(plugin_list "$h") || { echo "edits before the second run failed"; return 1; }
 
   {
     in_home "$h" /bin/bash "$REPO/claude/install.sh" > "$h/run2.log" 2>&1 &&
       check grep -q '^-local edit' "$h/run2.log" && check grep -q '^+++ .*/claude/CLAUDE.md' "$h/run2.log" &&
-      check grep -q 'local edit' "$h/.claude/CLAUDE.md.bak-"* && copies_match_repo "$h" &&
+      check grep -q 'local edit' "$h"/.claude/dotfiles-backups/*/CLAUDE.md && copies_match_repo "$h" &&
       check jq -e '.hooks.SessionStart == [{"hooks":[{"type":"command","command":"foreign-start"}]}]' "$h/.claude/settings.json" &&
       settings_match_template "$h" && links_point_at_repo "$h" &&
-      check [ "$(link_backups "$h")" = "$backups" ] && check [ "$(plugin_list "$h")" = "$plugins" ] &&
+      skills_hold_only_links "$h" && check [ "$(backed_up "$h")" = "CLAUDE.md commands settings.json skills" ] &&
+      check [ "$(plugin_list "$h")" = "$plugins" ] &&
       nothing_cloned "$h" && check [ "$(real_snapshot)" = "$before" ]
   } || { tail -n 30 "$h/run2.log"; return 1; }
+}
+
+test_install_finishes_after_remote_failures() {
+  local h before rc=0
+  before=$(real_snapshot) && h=$(scratch_home) && export FAIL_REMOTE=1 || { echo "setup failed"; return 1; }
+  in_home "$h" /bin/bash "$REPO/claude/install.sh" > "$h/run.log" 2>&1 || rc=$?
+  {
+    check [ "$rc" -ne 0 ] && settings_match_template "$h" && local_plugins_enabled "$h" && links_point_at_repo "$h" &&
+      check grep -q impeccable <<< "$(sed -n '/^Warnings:/,$p' "$h/run.log")" &&
+      check grep -q superpowers@claude-plugins-official <<< "$(sed -n '/^Warnings:/,$p' "$h/run.log")" &&
+      check grep -q 'gh auth login' "$h/run.log" && check [ "$(real_snapshot)" = "$before" ]
+  } || { tail -n 30 "$h/run.log"; return 1; }
 }
 
 test_install_mcp_authenticated() {
