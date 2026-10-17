@@ -1,0 +1,17 @@
+{
+  "name": "agent-atlas",
+  "description": "Agentic-development knowledge base + routing skill: a navigable map (not an encyclopedia) that, for any agentic request, surfaces the canonical terms, the mandatory stations, and the authoritative deep-dive sources just-in-time.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Luis Torres"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agents",
+    "agentic",
+    "knowledge-base",
+    "evals",
+    "orchestration",
+    "routing"
+  ]
+}
