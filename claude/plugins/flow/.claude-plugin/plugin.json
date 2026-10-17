@@ -1,0 +1,16 @@
+{
+  "name": "flow",
+  "description": "Main orchestration skill for the brainstorm → plan → 3-agent review → execute → 3-agent code review → ship cycle. Runs the whole development lifecycle end-to-end with cross-session resume.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Luis Torres"
+  },
+  "license": "MIT",
+  "keywords": [
+    "orchestration",
+    "workflow",
+    "planning",
+    "review",
+    "skills"
+  ]
+}

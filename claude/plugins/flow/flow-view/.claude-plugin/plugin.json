@@ -1,0 +1,9 @@
+{
+  "name": "flow-view",
+  "version": "0.2.1",
+  "description": "A /flow-view pane: the active flow or lean-flow step, and a tree of running subagents and external reviewers",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luis Torres"
+  }
+}

@@ -84,7 +84,7 @@ grep -l '^Status: in_progress' docs/flow/lean/*.md 2>/dev/null | sort
 Write the acceptance criteria before anything else — concrete, checkable, and complete enough that
 someone could verify the work without asking you a question.
 
-**Reach for more when the work wants more.** A written plan, a PRD, `grill-me` when the open
+**Reach for more when the work wants more.** A written plan, a PRD, `mattpocock-skills:grilling` when the open
 question is "does this make sense as a system", `flow:premortem` before code exists — all
 available, none required. A premortem is the cheapest way to find a design defect while it is still
 free to fix. If the design is settled and the deliverable is one diff, criteria alone are enough.
