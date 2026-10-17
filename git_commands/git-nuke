@@ -1,5 +1,5 @@
 branch=$1
-destiny=${2:-master}
+destiny=${2:-main}
 git checkout $destiny
 git push --delete origin $branch > /dev/null &
 git branch -D $branch

@@ -1,0 +1,151 @@
+{
+  "model": "opus",
+  "advisorModel": "fable",
+  "effortLevel": "high",
+  "modelSettings": {
+    "claude-fable-5": {
+      "effortLevel": "medium"
+    },
+    "claude-opus-5": {
+      "effortLevel": "high"
+    },
+    "claude-sonnet-5": {
+      "effortLevel": "medium"
+    },
+    "claude-fable-5-1": {
+      "effortLevel": "xhigh"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    }
+  },
+  "outputStyle": "Concise",
+  "alwaysThinkingEnabled": true,
+  "autoCompactEnabled": true,
+  "autoUpdatesChannel": "latest",
+  "awaySummaryEnabled": false,
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
+  "remoteControlAtStartup": false,
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Bash(git:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": [],
+    "ask": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.envrc)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/credentials.json)",
+      "Read(**/.aws/credentials)"
+    ],
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "../"
+    ]
+  },
+  "skillOverrides": {
+    "pr-jira": "off",
+    "mistral-review": "off",
+    "opencode-review": "off",
+    "stacked-prs": "off",
+    "visual-debrief": "off",
+    "request-feedback-artifact": "off"
+  },
+  "autoMode": {
+    "soft_deny": [
+      "$defaults"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command // \"\"'); printf '%s' \"$cmd\" | grep -qE '(^|[;&|()`])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)' || exit 0; dir=$(printf '%s' \"$cmd\" | grep -oE '^[[:space:]]*cd[[:space:]]+[^[:space:]&;|]+' | head -1 | sed -E 's/^[[:space:]]*cd[[:space:]]+//'); [ -n \"$dir\" ] || dir=.; branch=$(git -C \"$dir\" rev-parse --abbrev-ref HEAD 2>/dev/null); { [ \"$branch\" = main ] || [ \"$branch\" = master ]; } && printf '%s' '{\"decision\":\"block\",\"reason\":\"This commit targets main/master, which is blocked. Create a feature branch first (git checkout -b ...) — or cd into the worktree/repo you meant to commit in.\"}'; exit 0",
+            "if": "Bash(git commit*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rtk hook claude"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/comment-lint.py"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "mattpocock-skills@claude-plugins-official": true,
+    "impeccable@impeccable": true,
+    "warp@claude-code-warp": true,
+    "ponytail@ponytail": true,
+    "flow@flow-local": true,
+    "flow-view@flow-local": true,
+    "agent-atlas@agent-atlas-local": true
+  },
+  "extraKnownMarketplaces": {
+    "impeccable": {
+      "source": {
+        "source": "github",
+        "repo": "pbakaus/impeccable"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
+      }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    }
+  }
+}
