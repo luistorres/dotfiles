@@ -76,6 +76,61 @@ test_guard_blank_term_lines() {
     committed "$dir" notes.txt "Nothing private here"
 }
 
+TEMPLATE="$REPO/claude/settings.json"
+FOREIGN_HOOKS='{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"foreign-start"}]}],"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"foreign-pre"}]}]}}'
+
+merge_dir() { mktemp -d "$TMP_ROOT/merge.XXXXXX"; }
+
+same_json() { [ "$(jq -S . "$1")" = "$(jq -S . "$2")" ]; }
+
+test_merge_fresh() {
+  local d
+  d=$(merge_dir) && echo '{}' > "$d/live.json" &&
+    source "$REPO/claude/install.sh" &&
+    merge_settings "$d/live.json" "$TEMPLATE" > "$d/out.json" &&
+    same_json "$d/out.json" "$TEMPLATE"
+}
+
+test_merge_empty_live() {
+  local d
+  d=$(merge_dir) && : > "$d/live.json" &&
+    source "$REPO/claude/install.sh" &&
+    merge_settings "$d/live.json" "$TEMPLATE" > "$d/out.json" &&
+    same_json "$d/out.json" "$TEMPLATE"
+}
+
+test_merge_template_wins() {
+  local d
+  d=$(merge_dir) &&
+    echo '{"model":"live-model","theme":"dark","permissions":{"extra":1,"defaultMode":"live-mode"}}' > "$d/live.json" &&
+    source "$REPO/claude/install.sh" &&
+    merge_settings "$d/live.json" "$TEMPLATE" > "$d/out.json" &&
+    jq -e --slurpfile t "$TEMPLATE" '
+      .model == $t[0].model and .theme == "dark"
+      and .permissions.extra == 1 and .permissions.defaultMode == $t[0].permissions.defaultMode
+      and .permissions.allow == $t[0].permissions.allow' "$d/out.json" > /dev/null
+}
+
+test_merge_keeps_foreign_hooks() {
+  local d
+  d=$(merge_dir) && echo "$FOREIGN_HOOKS" > "$d/live.json" &&
+    source "$REPO/claude/install.sh" &&
+    merge_settings "$d/live.json" "$TEMPLATE" > "$d/out.json" &&
+    jq -e --slurpfile t "$TEMPLATE" '
+      .hooks.SessionStart == [{"hooks":[{"type":"command","command":"foreign-start"}]}]
+      and .hooks.PreToolUse == $t[0].hooks.PreToolUse + [{"matcher":"*","hooks":[{"type":"command","command":"foreign-pre"}]}]
+      and .hooks.PostToolUse == $t[0].hooks.PostToolUse' "$d/out.json" > /dev/null
+}
+
+test_merge_is_idempotent() {
+  local d
+  d=$(merge_dir) && echo "$FOREIGN_HOOKS" > "$d/live.json" &&
+    source "$REPO/claude/install.sh" &&
+    merge_settings "$d/live.json" "$TEMPLATE" > "$d/once.json" &&
+    merge_settings "$d/once.json" "$TEMPLATE" > "$d/twice.json" &&
+    same_json "$d/once.json" "$d/twice.json"
+}
+
 run_section() {
   local found=0 t
   for t in $(declare -F | awk '{ print $3 }' | grep -E "^test_$1(_|\$)"); do
