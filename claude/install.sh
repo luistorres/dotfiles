@@ -76,13 +76,18 @@ install_link() {
 }
 
 install_files() {
-  local skill
+  local skill link
   mkdir -p "$DEST"
   install_copy CLAUDE.md
   install_copy RTK.md
   install_link hooks/comment-lint.py
   install_link commands/code-review.md
   for skill in "${SKILLS[@]}"; do install_link "skills/$skill"; done
+  for link in "$DEST"/skills/*; do
+    if [ -L "$link" ] && [ ! -e "$link" ]; then
+      case $(readlink "$link") in "$SRC"/skills/*) rm "$link" ;; esac
+    fi
+  done
 }
 
 install_settings() {

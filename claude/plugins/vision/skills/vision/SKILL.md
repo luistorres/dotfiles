@@ -73,12 +73,13 @@ From the main checkout, not a worktree:
 grep -l '^Status: in_progress' docs/vision/*.md 2>/dev/null | sort
 ```
 
-- **None:** a fresh task; go to [1].
-- **One:** open it and resume at the first unticked step (in a stack, the first unticked task). If
-  its worktree is gone, recreate it from the recorded branch. A run whose front matter says
-  `Autonomy: granted` continues under it.
-- **Several:** list each with its title and first unticked step, and ask which. Never pick one
-  yourself. Files with a `Parent:` line are listed under their parent.
+- **The owner asked for new work:** go to [1], and mention any in-progress run in one line so it is
+  not forgotten.
+- **They asked to continue, or the request matches one run:** open it and resume at the first
+  unticked step (in a stack, the first unticked task). If its worktree is gone, recreate it from the
+  recorded branch. A run whose front matter says `Autonomy: granted` continues under it.
+- **Several runs could match:** list each with its title and first unticked step, and ask which.
+  Never pick one yourself. Files with a `Parent:` line are listed under their parent.
 
 ## [1] Frame
 
@@ -128,11 +129,14 @@ Worktree:
 - <YYYY-MM-DD> framed: <risk>; <design settled, or the plan's path>
 ```
 
-Then create the worktree from an up-to-date base, and record its path in the front matter:
+Then keep the run's files out of the repository's commits, create the worktree from an up-to-date
+base, and record its path in the front matter:
 
 ```bash
+exclude="$(git rev-parse --git-common-dir)/info/exclude"
+git check-ignore -q docs/vision/x || echo 'docs/vision/' >> "$exclude"
+git check-ignore -q .claude/worktrees/x || echo '.claude/worktrees/' >> "$exclude"
 git fetch origin
-git check-ignore -q .claude/worktrees/<slug> || echo '.claude/worktrees/' >> "$(git rev-parse --git-common-dir)/info/exclude"
 git worktree add .claude/worktrees/<slug> -b lt/<slug> origin/<default branch>
 ```
 
@@ -152,12 +156,16 @@ A stack builds each task in a fresh `vision:implementer` instead; `stack.md` say
 ## [3] Review
 
 Invoke `vision:review` with the worktree, BASE (the merge base with the base branch), HEAD, the
-title, the criteria and the risk. Tick review, fix and verify as each completes.
+title, the criteria and the risk. Tick review and fix as each completes, and verify as
+`vision:review` says: only once the last verify pass reported no criticals.
 
 ## [4] Ship
 
-Run `pr-create` in the worktree, as a draft under autonomy. Set `Status: done` (this drops the run
-from the [0] scan) and log the PR URL.
+Push the branch and open the PR from it with `gh pr create --head lt/<slug>`, adding `--draft` under
+autonomy and `--base <base branch>` for a task stacked on another. Take the title and body from
+`pr-message`, and list in the body any finding that is still open. Do not create another branch or
+commit after review: a change made after review needs its own review. Set `Status: done` (this drops
+the run from the [0] scan) and log the PR URL.
 
 ## Anti-patterns
 

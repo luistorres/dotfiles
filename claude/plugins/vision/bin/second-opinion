@@ -21,11 +21,13 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next } !front' "$agent_file" > "$work/brief.md"
 
-# Read-only by construction: no tool can write or run a command, and no hook or MCP server from the
-# reviewed repository or the user's setup runs inside the session.
+# The repository may be someone else's PR, so nothing from it or from the user's settings is loaded:
+# its settings could redirect credentials or run commands, and the user's allow rules reach every file.
+# With no settings sources, reads are limited to the repository and the inputs directory.
 rc=0
 (cd "$repo" && claude -p \
   --model "$model" \
+  --setting-sources= \
   --tools Read,Grep,Glob \
   --permission-mode dontAsk \
   --strict-mcp-config \

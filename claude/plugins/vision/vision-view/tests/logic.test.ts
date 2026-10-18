@@ -66,6 +66,7 @@ test('second-opinion launches are recognised with their log file', () => {
   expect(reviewerKind(launch)).toBe('second-opinion')
   expect(logPath(launch)).toBe('/tmp/v/second-opinion-abc1234.log')
   expect(reviewerKind('/plugins/vision/bin/second-opinion code-reviewer in.md /repo')).toBe('second-opinion')
+  expect(logPath('second-opinion code-reviewer "/r/in.md" /repo > "/r/second-opinion.log" 2>&1')).toBe('/r/second-opinion.log')
   expect(reviewerKind('git status')).toBe(undefined)
 })
 

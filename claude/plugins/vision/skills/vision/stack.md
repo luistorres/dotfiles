@@ -66,8 +66,9 @@ Current: 0/<N>
    before its PR. If the base moved because fixes landed below, merge it forward, then grep the
    result for each of those fixes; a clean merge can still drop one. Never rebase a published
    stack, because that rewrites reviewed commits and force-pushes every PR above it.
-6. Run `pr-create`, adding `Depends on #<n> (<base branch>).` to the body of a dependent task's PR.
-   Tick the task, record its PR, and advance `Current:`.
+6. Open the PR as [4] says, with `--head <task branch>` and, for a dependent task,
+   `--base <base branch>` and `Depends on #<n> (<base branch>).` in the body. Tick the task, record
+   its PR, and advance `Current:`.
 
 ## Drift review
 

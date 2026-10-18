@@ -5,9 +5,9 @@ shopt -s nullglob
 input=$(cat)
 cmd=$(jq -r '.tool_input.command // ""' <<< "$input")
 cwd=$(jq -r '.cwd // "."' <<< "$input")
-grep -qE '(^|[;&|(`[:space:]])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<< "$cmd" || exit 0
+grep -qE '(^|[;&|(`[:space:]])gh[[:space:]]+pr[[:space:]]+(create|new)([[:space:]]|$)' <<< "$cmd" || exit 0
 
-dir=$(grep -oE '^[[:space:]]*cd[[:space:]]+[^[:space:]&;|]+' <<< "$cmd" | head -1 | sed -E "s/^[[:space:]]*cd[[:space:]]+//; s/^[\"']//; s/[\"']\$//" || true)
+dir=$(grep -oE '^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+[^[:space:]&;|)]+' <<< "$cmd" | head -1 | sed -E "s/^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+//; s/^[\"']//; s/[\"']\$//" || true)
 dir=${dir/#\~/$HOME}
 case $dir in
   '') dir=$cwd ;;
@@ -15,7 +15,7 @@ case $dir in
   *) dir=$cwd/$dir ;;
 esac
 
-branch=$(grep -oE -- '(--head|-H)[[:space:]=]+[^[:space:]]+' <<< "$cmd" | head -1 | sed -E 's/^(--head|-H)[[:space:]=]+//' || true)
+branch=$(grep -oE -- '(--head|-H)[[:space:]=]+[^[:space:]]+' <<< "$cmd" | head -1 | sed -E "s/^(--head|-H)[[:space:]=]+//; s/^[\"']//; s/[\"']\$//" || true)
 [ -n "$branch" ] || branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2> /dev/null) || exit 0
 common=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2> /dev/null) || exit 0
 main=$(dirname "$common")

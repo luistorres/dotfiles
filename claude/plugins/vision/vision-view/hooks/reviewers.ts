@@ -19,7 +19,7 @@ export const expandVariables = (text: string, command: string): string => {
   return text.replace(/\$\{?([A-Za-z_]\w*)\}?/g, (whole, name: string) => vars.get(name) ?? whole)
 }
 
-export const logToken = (command: string): string | undefined => command.match(/>\s*(\S+\.(?:log|txt))/)?.[1]
+export const logToken = (command: string): string | undefined => command.match(/>\s*["']?([^\s"']+\.(?:log|txt))/)?.[1]
 
 export const logPath = (command: string): string | undefined => {
   const token = logToken(command)

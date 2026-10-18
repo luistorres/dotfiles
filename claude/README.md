@@ -43,7 +43,7 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 - **`bin/second-opinion`** runs the code-reviewer brief in a separate `claude -p` session on the model in `VISION_SECOND_OPINION_MODEL`, with read-only tools and no hooks or MCP servers.
 - **`hooks/pr-gate`** blocks `gh pr create` while the run's state file shows its review, fix or verify step unticked. A rule that must always hold is a hook, not a sentence in a prompt.
 
-Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run.
+Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run. On a machine that ran the older `flow` plugins, the template disables them, and the installer removes skill links that point at skills no longer in this folder.
 
 ## Leak guard
 

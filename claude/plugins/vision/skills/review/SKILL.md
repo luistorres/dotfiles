@@ -35,14 +35,18 @@ reads the model from `VISION_SECOND_OPINION_MODEL`. When that variable is unset,
 
 ## Prepare
 
+The review directory `<dir>` is `vision/<slug>` inside the repository's git common directory
+(`git -C <repo> rev-parse --path-format=absolute --git-common-dir`). Write every command below with
+its absolute paths spelled out, because shell variables do not survive from one Bash call to the
+next.
+
 ```bash
-dir="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)/vision/<slug>"
-mkdir -p "$dir"
-git -C "$REPO" diff --no-ext-diff --no-color --stat --patch "$BASE..$HEAD" > "$dir/<head7>.diff"
+mkdir -p <dir>
+git -C <repo> diff --no-ext-diff --no-color --stat --patch <base>..<head> > <dir>/<head7>.diff
 ```
 
 Check that the diff holds the task's files before dispatching anything; a wrong range wastes every
-pass. Then write `$dir/inputs-<head7>.md`:
+pass. Then write `<dir>/inputs-<head7>.md`:
 
 ```markdown
 Repository: <absolute path of the worktree>
@@ -63,15 +67,17 @@ Send every pass in one message, so they run at once:
 - each `vision:code-reviewer` or `vision:plan-reviewer` as an `Agent` call whose prompt is the inputs
   file's text;
 - the second opinion as a background `Bash` call:
-  `second-opinion code-reviewer "$dir/inputs-<head7>.md" "$REPO" > "$dir/second-opinion-<head7>.log" 2>&1`.
+  `second-opinion code-reviewer <dir>/inputs-<head7>.md <repo> > <dir>/second-opinion-<head7>.log 2>&1`.
 
 Completion notifications resume you, but a hung process never sends one: arm one fallback wake-up
 of about 30 minutes. A pass still silent at twice its usual duration is hung; stop it and run it
 again.
 
-A pass **failed** if it errored, returned nothing, lacks the `crit=` line and the three headings, or
-cites no file. Run a failed pass once more. If it fails again, go on without it and say so in the
-Log and the PR body. A failed pass is never a clean one.
+A pass **failed** if it errored, returned nothing, or lacks the `crit=` line and the three headings.
+A pass that reports no findings is a clean pass, not a failed one. Run a failed pass once more. If a
+`vision:code-reviewer` pass fails again, go on without it and say so in the Log and the PR body; if
+the second opinion fails again, run a `vision:code-reviewer` pass in its place. A failed pass is
+never a clean one.
 
 ## Triage
 
@@ -98,7 +104,9 @@ gates, and commit. When anyone claims a finding is already covered, run the test
 Then run one verify pass: a single `vision:code-reviewer` given only the fix commits
 (`<HEAD before the fixes>..HEAD`) and the findings they address. Skip it only when the fix round
 changed no code, and say so in the Log. Criticals from the verify pass get one more fix round and
-verify pass; if criticals survive that, stop and escalate, and never ship past them.
+verify pass; if criticals survive that, stop and escalate, and never ship past them. The verify step
+is ticked only when the last verify pass reported no criticals, or was skipped because no code
+changed.
 
 ## Record
 

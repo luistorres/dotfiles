@@ -262,6 +262,7 @@ test_install() {
   before=$(real_snapshot) && h=$(scratch_home) &&
     mkdir -p "$h/.claude/skills/pr-create" "$h/.claude/commands" &&
     echo old > "$h/.claude/skills/pr-create/SKILL.md" &&
+    ln -s "$REPO/claude/skills/retired-skill" "$h/.claude/skills/retired-skill" &&
     ln -s "$h/missing/code-review.md" "$h/.claude/commands/code-review.md" || { echo "setup failed"; return 1; }
 
   {
@@ -375,6 +376,7 @@ test_vision_second_opinion_runs_read_only_with_the_brief() {
     check [ "$(flag_value "$d" --output-format)" = json ] &&
     check [ "$(flag_value "$d" --add-dir)" = "$d/run" ] &&
     check grep -qx -- -p "$d/args" && check grep -qx -- --strict-mcp-config "$d/args" &&
+    check grep -qx -- --setting-sources= "$d/args" &&
     check grep -qx -- --no-session-persistence "$d/args" &&
     check cmp -s "$d/stdin" "$d/run/inputs.md" && check [ "$(cat "$d/cwd")" = "$d/repo" ] &&
     check grep -q '^You are an adversarial reviewer' "$d/brief" && check fails grep -q '^name: code-reviewer' "$d/brief" &&
@@ -447,7 +449,15 @@ test_vision_gate_finds_a_stack_task_from_its_worktree() {
 test_vision_gate_reads_the_head_flag() {
   local d
   d=$(gate_repo) && single_state "$d" in_progress lt/x "$UNREVIEWED" &&
-    check fails gate "$d" "gh pr create --head lt/x --fill"
+    check fails gate "$d" "gh pr create --head lt/x --fill" &&
+    check fails gate "$d" "gh pr create --head \"lt/x\" --fill" &&
+    check fails gate "$d" "gh pr new -H 'lt/x'"
+}
+
+test_vision_gate_reads_a_subshell_cd() {
+  local d
+  d=$(gate_repo) && git -C "$d" worktree add -q -b lt/x "$d/wt" && single_state "$d" in_progress lt/x "$UNREVIEWED" &&
+    check fails gate "$d" "(cd \"$d/wt\" && gh pr create --fill)"
 }
 
 test_vision_gate_ignores_what_it_does_not_govern() {
