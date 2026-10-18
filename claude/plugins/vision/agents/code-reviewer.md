@@ -82,8 +82,11 @@ procedure executable, and does it leave the system consistent halfway through?
 before it and what predicate it actually uses. A read, write, audit row or log before the gate
 is a finding. A gate keyed on a weaker predicate than the resource it protects (`can()` where the
 route requires `allow`; a row id with no ownership join; `in` where `Object.hasOwn` is meant) is a
-finding. Then ask what leaves the process: is any recipient, tax number, contact detail or secret
-in an error object, a span, a log line or a payload that says it carries "names alone"?
+finding. When the change gives an existing permission a new power, find everywhere that permission
+can be granted (role defaults, an access editor, seed data): every holder now gets the new power,
+and a holder that a lower layer refuses must get a clean denial, not a server error. Then ask what
+leaves the process: is any recipient, tax number, contact detail or secret in an error object, a
+span, a log line or a payload that says it carries "names alone"?
 
 *Reaches 8 (6%) · cases 02,06,07,10,11,13,16 of the ground-truth defects.*
 
