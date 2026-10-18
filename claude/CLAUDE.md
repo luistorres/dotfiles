@@ -95,5 +95,3 @@ gh api repos/{owner}/{repo}/issues/{number} -X PATCH -f title="…" -F body=@<fi
 Read multi-line bodies from a file with `-F body=@<path>` (a heredoc into a scratch file). After
 editing, verify with `gh pr view <n> --json title,body`. `gh pr create` and `gh pr view --json`
 are unaffected — this workaround is only for **edits**.
-
-@RTK.md

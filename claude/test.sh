@@ -208,11 +208,8 @@ links_point_at_repo() {
 }
 
 copies_match_repo() {
-  local f
-  for f in CLAUDE.md RTK.md; do
-    [ -f "$1/.claude/$f" ] && [ ! -L "$1/.claude/$f" ] && cmp -s "$1/.claude/$f" "$REPO/claude/$f" ||
-      { echo "not a copy of the repo file: $f"; return 1; }
-  done
+  [ -f "$1/.claude/CLAUDE.md" ] && [ ! -L "$1/.claude/CLAUDE.md" ] && cmp -s "$1/.claude/CLAUDE.md" "$REPO/claude/CLAUDE.md" ||
+    { echo "not a copy of the repo file: CLAUDE.md"; return 1; }
 }
 
 settings_match_template() {

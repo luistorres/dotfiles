@@ -92,15 +92,6 @@
             "if": "Bash(git commit*)"
           }
         ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "rtk hook claude"
-          }
-        ]
       }
     ],
     "PostToolUse": [

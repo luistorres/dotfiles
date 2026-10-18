@@ -47,7 +47,7 @@ preflight() {
   for tool in claude git jq; do
     command -v "$tool" > /dev/null || { echo "install.sh: $tool is required" >&2; exit 1; }
   done
-  for tool in rtk python3 gh npx; do
+  for tool in python3 gh npx; do
     command -v "$tool" > /dev/null || warn "$tool not found; the hook or skill that uses it will not work"
   done
   if command -v gh > /dev/null && ! grep -q 'github/gh-stack' <<< "$(gh extension list 2> /dev/null)"; then
@@ -79,7 +79,6 @@ install_files() {
   local skill link
   mkdir -p "$DEST"
   install_copy CLAUDE.md
-  install_copy RTK.md
   install_link hooks/comment-lint.py
   install_link commands/code-review.md
   for skill in "${SKILLS[@]}"; do install_link "skills/$skill"; done
