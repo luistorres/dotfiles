@@ -1,8 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+model=${VISION_SECOND_OPINION_MODEL:-}
+if [ "${1:-}" = --model ]; then
+  model=${2:-}
+  shift 2 || true
+fi
 if [ $# -ne 3 ]; then
-  echo "usage: second-opinion <agent> <inputs-file> <repository>" >&2
+  echo "usage: second-opinion [--model <model>] <agent> <inputs-file> <repository>" >&2
   exit 2
 fi
 
@@ -10,9 +15,8 @@ here=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 agent_file="$here/../agents/$1.md"
 inputs=$2
 repo=$3
-model=${VISION_SECOND_OPINION_MODEL:-}
 
-[ -n "$model" ] || { echo "Error: VISION_SECOND_OPINION_MODEL is not set" >&2; exit 3; }
+[ -n "$model" ] || { echo "Error: no model: pass --model or set VISION_SECOND_OPINION_MODEL" >&2; exit 3; }
 [ -f "$agent_file" ] || { echo "Error: no agent named $1" >&2; exit 2; }
 [ -f "$inputs" ] || { echo "Error: no inputs file at $inputs" >&2; exit 2; }
 [ -d "$repo" ] || { echo "Error: no repository at $repo" >&2; exit 2; }

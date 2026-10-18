@@ -41,7 +41,8 @@ PRD: docs/vision/plans/<YYYY-MM-DD>-<slug>-prd.md
 
 An issue the owner asks you to take becomes its own vision run, single or stack, with
 `Parent: <path of this file>` in its front matter. When it ships, tick its row, or close it in the
-tracker.
+tracker. Under autonomy, take every open issue in dependency order without stopping to ask between
+them; an issue that depends on another starts from that issue's branch once its PR is open.
 
 On resume with a tracker, read the issues' state from the tracker first. If anything diverged since
 the last session (an issue was closed, or assigned to someone else), say so and confirm before

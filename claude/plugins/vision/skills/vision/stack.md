@@ -57,11 +57,13 @@ When the stack has three or more tasks, the last task's steps line also carries 
 `- [ ] build · [ ] review · [ ] fix · [ ] verify · [ ] drift · [ ] pr`, and the PR gate will not
 open that PR until `drift` is ticked.
 
-## Each task, in order
+## Each task
 
 1. Create its worktree from its base, as in [1], and record the path.
-2. Dispatch a fresh `vision:implementer` with the worktree path, the task block and the plan path,
-   and record its agent id under `Implementer:`. Fix rounds resume that agent with `SendMessage`,
+2. Dispatch a fresh `vision:implementer` with the worktree path, the task block, the plan path and
+   the repository's known tooling traps (how to run its lint and tests, environment variables that
+   break them, setup a fresh worktree needs). It does not have your memory, and a trap you know
+   silently bites it. Record its agent id under `Implementer:`. Fix rounds resume that agent with `SendMessage`,
    because it already holds the worktree and its own reasoning. If the resume fails, or its context
    is spent, dispatch a fresh implementer with the task block and the findings.
 3. Read its diff against the criteria yourself; an implementer reporting done is a claim.
@@ -74,6 +76,11 @@ open that PR until `drift` is ticked.
    `--base <base branch>` and `Depends on #<n> (<base branch>).` in the body. Tick the task, record
    its PR, and advance `Current:`.
 
+Tasks with no dependency between them can be built at the same time, each in its own worktree with
+its own implementer, dispatched in one message; never let two agents write to the same worktree. A
+task that depends on another needs that task's code, not its review: its implementer can start as
+soon as the base task is built, and merges forward the base's later fixes.
+
 ## Drift review
 
 A per-task review never sees the stack as a whole: two tasks can disagree on a contract, name the
@@ -81,6 +88,6 @@ same thing two ways, or leave dead code behind the other. Once the stack is thre
 one more `vision:code-reviewer` pass before the last task's PR, over the accumulated diff
 (`origin/<default branch>...<tip branch>`) with the stack's criteria. Measured, the cross-task
 criticals came only from stacks this deep. Fix each finding on the lowest branch that owns it, then
-merge forward, and tick the last task's `drift` box.
+merge forward to the tip in the same turn, and tick the last task's `drift` box.
 
 After the last task's PR, set `Status: done`.

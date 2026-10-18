@@ -56,7 +56,12 @@ file makes a hard kill resumable from [0]. End a turn only in one of these state
 - **Done:** the last step is ticked.
 - **Blocked on the owner:** send `PushNotification` once per distinct blocker, log it, and end the
   turn. Their reply resumes you; a timed wake-up would only re-read the whole context to find
-  nothing changed.
+  nothing changed. A question that does not block the next steps is not a blocker: log it as open,
+  keep working on everything that does not depend on it, and ask when it becomes the blocker or at
+  the end.
+- **A permission check denied a tool call:** that is a question for the owner, never a silent scope
+  cut. Ask in the first sentence what was blocked and whether to proceed, and keep working on the
+  rest meanwhile.
 - **Waiting on background work:** its completion resumes you, but a hung process never notifies, so
   arm one `ScheduleWakeup` as a fallback, at about twice the work's usual duration. On waking, check
   that work first, and stop and relaunch anything silent past that time. A `/loop` already ticking
@@ -152,7 +157,9 @@ That licence never covers changing what the task is; that is a new task, and it 
 
 ## [2] Build
 
-Work in the worktree (`EnterWorktree` with its `path`) and build against the criteria. For every
+Stay in the main checkout and work in the worktree by absolute path, with `cd <worktree> && …`
+in each command; switching the session into the worktree would block edits to the state file, which
+lives in the main checkout. Build against the criteria. For every
 guard, validation or check you add, break what it guards, watch it fail, then restore it. Before
 review, run the repository's gates and walk each criterion against the diff. Commit.
 

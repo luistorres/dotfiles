@@ -412,6 +412,14 @@ test_vision_second_opinion_fails_when_claude_exits_non_zero() {
   d=$(opinion_dir) && export STUB_EXIT=1 && check fails second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
 }
 
+test_vision_second_opinion_takes_a_model_flag() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    STUB_DIR=$d PATH="$d/bin:$PATH" env -u VISION_SECOND_OPINION_MODEL \
+      "$VISION/bin/second-opinion" --model cheap-model code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check [ "$(flag_value "$d" --model)" = cheap-model ]
+}
+
 test_vision_second_opinion_needs_a_model() {
   local d rc=0
   d=$(opinion_dir) && answer "$d" "$REVIEW" || return 1

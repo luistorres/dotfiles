@@ -29,6 +29,12 @@ still gets its pass, because prose asserts things that go false silently.
 
 A written plan or PRD gets one `vision:plan-reviewer` pass before the owner approves it, at any risk.
 
+When `VISION_EXTRA_REVIEW_MODEL` is set, every code review also gets one extra pass from that
+inexpensive model: `second-opinion --model <its value> code-reviewer …`, dispatched with the others.
+It buys one more sample from a differently trained model for a small fraction of a pass's cost. Its
+findings are triaged like any other's, and whether it earns its place is measured, not assumed (see
+Record).
+
 The second opinion runs the same brief on another vendor's model, through `second-opinion`, which
 reads the model from `VISION_SECOND_OPINION_MODEL`. When that variable is unset, run a third
 `vision:code-reviewer` instead.
@@ -117,7 +123,9 @@ another verify pass.
 
 Write one Log line per review: the tier; each pass with its `crit/imp/minor` counts and its tokens
 (an `Agent` result reports them, and the second opinion prints its usage on its last line); any pass
-that failed; what was fixed, declined and only listed. These lines are what the tiers get tuned on.
+that failed; what was fixed, declined and only listed. For each pass, also count its unique findings
+(ones no other pass raised) and how many of those were fixed: a pass whose unique findings are
+rarely fixed is only agreeing or adding noise. These lines are what the tiers get tuned on.
 
 ## Reviewing someone else's PR
 

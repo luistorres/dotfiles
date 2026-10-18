@@ -14,7 +14,9 @@
 - `gh`, logged in with `gh auth login`, plus the stack extension: `gh extension install github/gh-stack`.
 - `rtk` (a hook rewrites shell commands through it) and `python3` (for the comment hook).
 - `npx`, for the projects whose lint and format commands use it.
-- Optionally, `VISION_SECOND_OPINION_MODEL` in `~/.zshrc.local`: a model `claude --model` can reach, which vision uses for its second-opinion reviewer. When it is unset, vision runs another Claude pass instead.
+- Optionally, in `~/.zshrc.local`, models `claude --model` can reach:
+  - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for its second-opinion reviewer on high-risk changes. When it is unset, vision runs another Claude pass instead.
+  - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on every change. When it is unset, the pass is skipped.
 
 The installer warns about each missing optional tool and carries on.
 
