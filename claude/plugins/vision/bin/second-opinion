@@ -43,8 +43,10 @@ result=$(field '.result // ""')
 problem=""
 if [ "$rc" -ne 0 ] || [ "$(field '.is_error // false')" != false ]; then
   problem="the review session failed (exit $rc, $(field '.subtype // "no result"'))"
-elif ! grep -q '^crit=' <<< "$result" || ! grep -q '^#### Critical' <<< "$result"; then
-  problem="the review has no crit= line or severity headings"
+else
+  for line in '^crit=' '^#### Critical' '^#### Important' '^#### Minor'; do
+    grep -q "$line" <<< "$result" || problem="the review has no crit= line or is missing a severity heading"
+  done
 fi
 
 printf '%s\n' "$result"

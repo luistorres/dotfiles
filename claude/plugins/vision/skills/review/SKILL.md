@@ -42,9 +42,13 @@ next.
 
 ```bash
 mkdir -p <dir>
-git -C <repo> diff --no-ext-diff --no-color --stat --patch <base>..<head> > <dir>/<head7>.diff
+git -C <repo> diff --no-ext-diff --no-color --stat <base>..<head> > <dir>/<head7>.diff
+git -C <repo> diff --no-ext-diff --no-color --patch <base>..<head> -- . ':(exclude)<generated path>' >> <dir>/<head7>.diff
 ```
 
+Leave generated files (lockfiles, schema snapshots, generated clients) out of the patch with one
+`':(exclude)<path>'` per path; a regenerated snapshot can be most of a diff, and every reviewer pays
+to read it. The stat above the patch still lists them, so reviewers can check they were regenerated.
 Check that the diff holds the task's files before dispatching anything; a wrong range wastes every
 pass. Then write `<dir>/inputs-<head7>.md`:
 

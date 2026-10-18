@@ -37,11 +37,13 @@ for file in "$main"/docs/vision/*.md; do
   ' "$file")
   [ -n "$steps" ] || continue
   missing=""
-  for step in review fix verify; do
+  required="review fix verify"
+  grep -qF '] drift' <<< "$steps" && required="$required drift"
+  for step in $required; do
     grep -qF "[x] $step" <<< "$steps" || missing="$missing $step"
   done
   if [ -n "$missing" ]; then
-    echo "vision: ${file#"$main"/} shows these steps unticked for $branch:$missing. Run vision:review and tick review, fix and verify before opening the PR." >&2
+    echo "vision: ${file#"$main"/} shows these steps unticked for $branch:$missing. Run vision:review and tick these steps before opening the PR." >&2
     blocked=1
   fi
 done

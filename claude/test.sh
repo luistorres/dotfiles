@@ -395,6 +395,12 @@ test_vision_second_opinion_fails_without_severity_headings() {
     fails_with 'no crit= line' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
 }
 
+test_vision_second_opinion_fails_when_a_heading_is_missing() {
+  local d
+  d=$(opinion_dir) && answer "$d" $'crit=0 imp=0 minor=0\n#### Critical\n#### Important' &&
+    fails_with 'missing a severity heading' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
+}
+
 test_vision_second_opinion_fails_when_claude_exits_non_zero() {
   local d
   d=$(opinion_dir) && export STUB_EXIT=1 && check fails second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
@@ -444,6 +450,15 @@ test_vision_gate_finds_a_stack_task_from_its_worktree() {
       '- [x] build · [x] review · [x] fix · [x] verify · [x] pr' '- **Branch:** lt/a' '' '## [ ] Task 2: b' \
       '- [x] build · [x] review · [ ] fix · [ ] verify · [ ] pr' '- **Branch:** lt/x' '' '## Log' > "$d/docs/vision/2026-10-18-s.md" &&
     fails_with 'unticked for lt/x: fix verify' gate "$d" "cd $d/wt && gh pr create --fill"
+}
+
+test_vision_gate_requires_the_drift_review_when_listed() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x &&
+    printf -- '%s\n' '---' 'Status: in_progress' 'Shape: stack' '---' '# S' '' '## [ ] Task 3: c' \
+      '- [x] build · [x] review · [x] fix · [x] verify · [ ] drift · [ ] pr' '- **Branch:** lt/x' '' '## Log' > "$d/docs/vision/2026-10-18-s.md" &&
+    fails_with 'unticked for lt/x: drift' gate "$d" "gh pr create --fill" &&
+    /usr/bin/sed -i '' 's/\[ \] drift/[x] drift/' "$d/docs/vision/2026-10-18-s.md" && check gate "$d" "gh pr create --fill"
 }
 
 test_vision_gate_reads_the_head_flag() {

@@ -53,6 +53,10 @@ Current: 0/<N>
 - <YYYY-MM-DD> framed: <N> tasks
 ```
 
+When the stack has three or more tasks, the last task's steps line also carries the drift review,
+`- [ ] build · [ ] review · [ ] fix · [ ] verify · [ ] drift · [ ] pr`, and the PR gate will not
+open that PR until `drift` is ticked.
+
 ## Each task, in order
 
 1. Create its worktree from its base, as in [1], and record the path.
@@ -77,6 +81,6 @@ same thing two ways, or leave dead code behind the other. Once the stack is thre
 one more `vision:code-reviewer` pass before the last task's PR, over the accumulated diff
 (`origin/<default branch>...<tip branch>`) with the stack's criteria. Measured, the cross-task
 criticals came only from stacks this deep. Fix each finding on the lowest branch that owns it, then
-merge forward.
+merge forward, and tick the last task's `drift` box.
 
 After the last task's PR, set `Status: done`.
