@@ -6,6 +6,8 @@ input=$(cat)
 cmd=$(jq -r '.tool_input.command // ""' <<< "$input")
 cwd=$(jq -r '.cwd // "."' <<< "$input")
 grep -qE '(^|[;&|(`[:space:]])gh[[:space:]]+pr[[:space:]]+(create|new)([[:space:]]|$)' <<< "$cmd" || exit 0
+# Exit 1 would not block the tool call, so a gate that breaks while checking a PR fails closed.
+trap 'echo "vision: pr-gate could not check this PR, so it is blocked" >&2; exit 2' ERR
 
 dir=$(grep -oE '^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+[^[:space:]&;|)]+' <<< "$cmd" | head -1 | sed -E "s/^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+//; s/^[\"']//; s/[\"']\$//" || true)
 dir=${dir/#\~/$HOME}

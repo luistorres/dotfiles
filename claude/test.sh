@@ -460,6 +460,16 @@ test_vision_gate_reads_a_subshell_cd() {
     check fails gate "$d" "(cd \"$d/wt\" && gh pr create --fill)"
 }
 
+test_vision_gate_blocks_when_it_cannot_check() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/x "$REVIEWED" &&
+    mkdir "$d/stub" && printf '#!/bin/sh\nexit 1\n' > "$d/stub/awk" && chmod +x "$d/stub/awk" || return 1
+  local rc=0
+  jq -n --arg cwd "$d" '{tool_input: {command: "gh pr create --fill"}, cwd: $cwd}' |
+    PATH="$d/stub:$PATH" "$VISION/hooks/pr-gate" 2> /dev/null || rc=$?
+  check [ "$rc" -eq 2 ]
+}
+
 test_vision_gate_ignores_what_it_does_not_govern() {
   local d
   d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/xy "$UNREVIEWED" &&
