@@ -6,8 +6,9 @@ description: Adversarial review of a diff or a plan, sized to what a missed defe
 # review
 
 A reviewer that did not write the change finds what its author structurally cannot. Which defects a
-pass misses is largely random, so each pass is a sample: more passes buy recall, and every pass is
-paid for. Size the review by what a missed defect would cost, never by the size of the diff.
+pass misses is partly chance and partly its model's blind spots, so each pass is a sample, and a pass
+on a differently trained model overlaps least with the others. More passes buy recall, and every
+pass is paid for. Size the review by what a missed defect would cost, never by the size of the diff.
 
 ## Risk
 
@@ -23,23 +24,21 @@ still gets its pass, because prose asserts things that go false silently.
 
 | Risk | Code review passes | Plan review passes |
 |---|---|---|
-| Low | 1 `vision:code-reviewer` | 1 `vision:plan-reviewer` |
-| Standard | 2 `vision:code-reviewer` | 1 `vision:plan-reviewer` |
-| High | 2 `vision:code-reviewer` and 1 second opinion | 1 `vision:plan-reviewer` and 1 second opinion |
+| Low | 1 `vision:code-reviewer` | 1 second opinion |
+| Standard | 1 `vision:code-reviewer` and 1 second opinion | 1 second opinion |
+| High | 1 `vision:code-reviewer`, 1 second opinion and 1 extra pass | 1 second opinion and 1 extra pass |
 
 A written plan or PRD is reviewed once, before the owner approves it: fix what you agree with and let
 the approval be the gate. Re-reviewing a revised plan rarely converges, because prose always yields
 another finding.
 
-When `VISION_EXTRA_REVIEW_MODEL` is set, every review, of code or of a plan, also gets one extra pass
-from that inexpensive model: `second-opinion --model <its value> <reviewer> …`, dispatched with the
-others. It buys one more sample from a differently trained model for a small fraction of a pass's
-cost. Its findings are triaged like any other's, and whether it earns its place is measured, not
-assumed (see Record).
-
-The second opinion runs the same reviewer's brief on another vendor's model, through
-`second-opinion`, which reads the model from `VISION_SECOND_OPINION_MODEL`. When that variable is
-unset, run one more pass of the same Claude reviewer instead.
+The second opinion runs the same reviewer's brief on another vendor's model, which `second-opinion`
+reads from `VISION_SECOND_OPINION_MODEL`. The extra pass runs it on the inexpensive model in
+`VISION_EXTRA_REVIEW_MODEL`, through `second-opinion --model <its value>`: one more differently
+trained reader for a small fraction of a pass's cost. When either variable is unset, that seat runs
+as a pass of the matching Claude reviewer, `vision:code-reviewer` or `vision:plan-reviewer`,
+instead. Every seat's findings are triaged alike, and whether a seat earns its place is measured,
+not assumed (see Record).
 
 ## Prepare
 
@@ -81,7 +80,8 @@ Send every pass in one message, so they run at once:
   file's text;
 - the second opinion and the extra pass as background `Bash` calls:
   `second-opinion [--model <model>] <reviewer> <inputs file> <repo> > <dir>/<seat>-<head7 or plan>.log 2>&1`,
-  where `<reviewer>` is `code-reviewer` or `plan-reviewer`.
+  where `<reviewer>` is `code-reviewer` or `plan-reviewer` and `<seat>` is `second-opinion` or
+  `extra`.
 
 Completion notifications resume you, but a hung process never sends one: arm one fallback wake-up
 of about 30 minutes. A pass still silent at twice its usual duration is hung; stop it and run it
@@ -89,9 +89,9 @@ again.
 
 A pass **failed** if it errored, returned nothing, or lacks the `crit=` line and the three headings.
 A pass that reports no findings is a clean pass, not a failed one. Run a failed pass once more. If a
-Claude reviewer's pass fails again, go on without it and say so in the Log and the PR body; if the
-second opinion fails again, run a pass of the same Claude reviewer in its place. A failed pass is
-never a clean one.
+Claude reviewer's pass fails again, go on without it and say so in the Log and the PR body; if a
+`second-opinion` pass fails again, run a pass of the matching Claude reviewer in its place. A failed
+pass is never a clean one.
 
 ## Triage
 
@@ -126,11 +126,12 @@ commit and reported no criticals, or was skipped because no code changed.
 
 ## Record
 
-Write one Log line per review, saying whether it reviewed code or a plan: the tier; each pass with its `crit/imp/minor` counts and its tokens
-(an `Agent` result reports them, and the second opinion prints its usage on its last line); any pass
-that failed; what was fixed, declined and only listed. For each pass, also count its unique findings
-(ones no other pass raised) and how many of those were fixed: a pass whose unique findings are
-rarely fixed is only agreeing or adding noise. These lines are what the tiers get tuned on.
+Write one Log line per review, saying whether it reviewed code or a plan: the tier; each pass with
+its model, its `crit/imp/minor` counts and its tokens (an `Agent` result reports them, and
+`second-opinion` prints them on its last line); any pass that failed; what was fixed, declined and
+only listed. For each pass, also count its unique findings (ones no other pass raised) and how many
+of those were fixed: a pass whose unique findings are rarely fixed is only agreeing or adding noise.
+These lines are what the tiers get tuned on.
 
 ## Reviewing someone else's PR
 

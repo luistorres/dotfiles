@@ -15,8 +15,8 @@
 - `python3`, for the comment hook.
 - `npx`, for the projects whose lint and format commands use it.
 - Optionally, in `~/.zshrc.local`, models `claude --model` can reach:
-  - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for its second-opinion reviewer on high-risk changes. When it is unset, vision runs another Claude pass instead.
-  - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on every change. When it is unset, the pass is skipped.
+  - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for every plan review and as the second reviewer on standard- and high-risk changes. When it is unset, vision runs a Claude pass instead.
+  - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on high-risk changes and plans. When it is unset, vision runs a Claude pass instead.
 
 The installer warns about each missing optional tool and carries on.
 
@@ -42,7 +42,7 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 
 - **Skills** are procedures, loaded only when used: `vision` runs a task from framing to PR, and `review` sizes and runs adversarial review. The stack and issue-set procedures are reference files the `vision` skill opens only when a task needs them.
 - **Agents** are for work that must not share the author's context: `code-reviewer` and `plan-reviewer` can only read and search, and `implementer` builds one task of a stack in its own context. Their prompts live in the agent files, so the orchestrator passes only each run's inputs.
-- **`bin/second-opinion`** runs the code-reviewer brief in a separate `claude -p` session on the model in `VISION_SECOND_OPINION_MODEL`, with read-only tools and no hooks or MCP servers.
+- **`bin/second-opinion`** runs a reviewer's brief in a separate `claude -p` session on the model in `VISION_SECOND_OPINION_MODEL` (or `--model`), with read-only tools and no hooks or MCP servers.
 - **`hooks/pr-gate`** blocks `gh pr create` while the run's state file shows its review, fix or verify step unticked. A rule that must always hold is a hook, not a sentence in a prompt.
 
 Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run. On a machine that ran the older `flow` plugins, the template disables them, and the installer removes skill links that point at skills no longer in this folder.

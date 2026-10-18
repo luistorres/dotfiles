@@ -417,6 +417,13 @@ test_vision_second_opinion_takes_a_model_flag() {
     check [ "$(flag_value "$d" --model)" = cheap-model ]
 }
 
+test_vision_second_opinion_runs_the_plan_reviewer_brief() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    second_opinion "$d" plan-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check grep -q '^You are reviewing a plan' "$d/brief" && check fails grep -q '^name: plan-reviewer' "$d/brief"
+}
+
 test_vision_second_opinion_needs_a_model() {
   local d rc=0
   d=$(opinion_dir) && answer "$d" "$REVIEW" || return 1
