@@ -106,7 +106,8 @@ Then run one verify pass: a single `vision:code-reviewer` given only the fix com
 changed no code, and say so in the Log. Criticals from the verify pass get one more fix round and
 verify pass; if criticals survive that, stop and escalate, and never ship past them. The verify step
 is ticked only when the last verify pass reported no criticals, or was skipped because no code
-changed.
+changed. Importants a verify pass raises are triaged as above, and fixing them does not call for
+another verify pass.
 
 ## Record
 

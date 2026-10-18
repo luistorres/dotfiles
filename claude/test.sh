@@ -372,7 +372,7 @@ test_vision_second_opinion_runs_read_only_with_the_brief() {
     check [ "$(flag_value "$d" --model)" = other-model ] &&
     check [ "$(flag_value "$d" --tools)" = Read,Grep,Glob ] &&
     check [ "$(flag_value "$d" --permission-mode)" = dontAsk ] &&
-    check [ "$(flag_value "$d" --settings)" = '{"disableAllHooks":true}' ] &&
+    check jq -e '.disableAllHooks and (.permissions.deny | index("Read(**/.env)") and index("Read(**/*.pem)"))' <<< "$(flag_value "$d" --settings)" > /dev/null &&
     check [ "$(flag_value "$d" --output-format)" = json ] &&
     check [ "$(flag_value "$d" --add-dir)" = "$d/run" ] &&
     check grep -qx -- -p "$d/args" && check grep -qx -- --strict-mcp-config "$d/args" &&

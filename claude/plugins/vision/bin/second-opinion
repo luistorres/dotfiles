@@ -31,7 +31,7 @@ rc=0
   --tools Read,Grep,Glob \
   --permission-mode dontAsk \
   --strict-mcp-config \
-  --settings '{"disableAllHooks":true}' \
+  --settings '{"disableAllHooks":true,"permissions":{"deny":["Read(**/.env)","Read(**/.env.*)","Read(**/.envrc)","Read(**/*.pem)","Read(**/*.key)","Read(**/credentials.json)"]}}' \
   --append-system-prompt-file "$work/brief.md" \
   --add-dir "$(dirname "$inputs")" \
   --max-turns "${VISION_SECOND_OPINION_MAX_TURNS:-80}" \

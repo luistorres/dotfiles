@@ -103,8 +103,15 @@ Work these out against the actual code, then present them in plan mode for appro
   stations it marks applicable into the criteria.
 
 On approval, write the state file `docs/vision/<YYYY-MM-DD>-<slug>.md` in the main checkout; a copy
-in a worktree is one the [0] scan never finds. A stack or an issue set uses the format in its own
-reference file. A single PR uses this one:
+in a worktree is one the [0] scan never finds. Keep `docs/vision/` out of the repository's commits
+before writing anything there:
+
+```bash
+exclude="$(git rev-parse --git-common-dir)/info/exclude"
+git check-ignore -q docs/vision/x || echo 'docs/vision/' >> "$exclude"
+```
+
+A stack or an issue set uses the format in its own reference file. A single PR uses this one:
 
 ```markdown
 ---
@@ -129,12 +136,10 @@ Worktree:
 - <YYYY-MM-DD> framed: <risk>; <design settled, or the plan's path>
 ```
 
-Then keep the run's files out of the repository's commits, create the worktree from an up-to-date
-base, and record its path in the front matter:
+Then create the worktree from an up-to-date base, and record its path in the front matter:
 
 ```bash
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
-git check-ignore -q docs/vision/x || echo 'docs/vision/' >> "$exclude"
 git check-ignore -q .claude/worktrees/x || echo '.claude/worktrees/' >> "$exclude"
 git fetch origin
 git worktree add .claude/worktrees/<slug> -b lt/<slug> origin/<default branch>
@@ -156,16 +161,17 @@ A stack builds each task in a fresh `vision:implementer` instead; `stack.md` say
 ## [3] Review
 
 Invoke `vision:review` with the worktree, BASE (the merge base with the base branch), HEAD, the
-title, the criteria and the risk. Tick review and fix as each completes, and verify as
-`vision:review` says: only once the last verify pass reported no criticals.
+title, the criteria and the risk. Tick review and fix as each completes, and verify only when
+`vision:review` says to.
 
 ## [4] Ship
 
 Push the branch and open the PR from it with `gh pr create --head lt/<slug>`, adding `--draft` under
 autonomy and `--base <base branch>` for a task stacked on another. Take the title and body from
 `pr-message`, and list in the body any finding that is still open. Do not create another branch or
-commit after review: a change made after review needs its own review. Set `Status: done` (this drops
-the run from the [0] scan) and log the PR URL.
+commit after review: a change made after review needs its own review. Log the PR URL. Once the run's
+last PR is open (for a stack, its last task's), set `Status: done`, which drops the run from the
+[0] scan.
 
 ## Anti-patterns
 

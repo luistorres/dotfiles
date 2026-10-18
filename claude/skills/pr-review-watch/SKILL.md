@@ -145,7 +145,7 @@ Dispatch with the **Agent tool**, `subagent_type: "claude"`, **`model: "opus"`**
 > The `{head_sha}` passed in can be stale if the author pushed after the orchestrator scanned. Resolve the **current** head first, then build the worktree from it:
 > ```bash
 > WT=~/.claude/pr-review-watch/worktrees/{owner}-{repo}-pr{number}
-> git -C {repo_path} fetch --quiet origin pull/{number}/head
+> git -C {repo_path} fetch --quiet origin pull/{number}/head {base_ref}
 > CUR_HEAD=$(gh pr view {number} --repo {owner}/{repo} --json headRefOid --jq .headRefOid)
 > git -C {repo_path} worktree add --detach "$WT" "$CUR_HEAD"
 > ```
@@ -161,16 +161,16 @@ Dispatch with the **Agent tool**, `subagent_type: "claude"`, **`model: "opus"`**
 > Build a compact **prior-context summary**: which issues were already raised (and by whom), which the **author refuted or already fixed** (look for replies, "fixed in `<sha>`", resolved threads), and whether **Luis (`luistorres`) already reviewed this PR**. You'll use this in steps 4 and 5. If Luis already reviewed and nothing material changed since, expect few or zero net-new findings — that is a valid outcome, not a failure.
 >
 > ### 3. Run the two-model review (NO nested Claude subagents)
-> You are Opus and you are the second reviewer + the verifier yourself. Gather two independent opinions over `{base_sha}...$CUR_HEAD`:
+> You are Opus and you are the second reviewer + the verifier yourself. Gather two independent opinions over `{base_sha}...$CUR_HEAD`; the three dots diff from the merge base, so commits that landed on the base branch after the PR forked are not mistaken for the PR's own changes:
 > - **second opinion (another vendor's model):** start it first, so it runs while you review. Shell variables do not survive between Bash calls, so spell out absolute paths:
 >   ```bash
 >   D=~/.claude/pr-review-watch/second-opinion/{owner}-{repo}-pr{number}
 >   WT=~/.claude/pr-review-watch/worktrees/{owner}-{repo}-pr{number}
 >   mkdir -p "$D"
->   git -C "$WT" diff --no-ext-diff --no-color --stat --patch "$(git -C "$WT" merge-base {base_sha} HEAD)..HEAD" > "$D/pr.diff"
+>   git -C "$WT" diff --no-ext-diff --no-color --stat --patch {base_sha}...HEAD > "$D/pr.diff" && [ -s "$D/pr.diff" ]
 >   ```
->   Write `$D/inputs.md` with one line each for `Repository:` (the worktree), `Diff:` (`$D/pr.diff`), `Task:` (the PR title) and `User-facing surface:` (yes or no), then `Acceptance criteria:` followed by the PR body, then a **"Prior review context"** block with the summary from step 2, so it reasons about what was already raised instead of repeating it. Run `second-opinion code-reviewer <$D>/inputs.md <$WT> > <$D>/review.log 2>&1` as a background Bash call, do your own review meanwhile, and read its verdict from the log before step 4. If it is still running 30 minutes after it started, stop it and note it. It exits 3 when no second-opinion model is configured; you are then the only reviewer.
-> - **opus (you):** read the diff (`git -C "$WT" diff {base_sha}..$CUR_HEAD`) and the surrounding files yourself; form your own findings.
+>   If that fails or the diff is empty, skip the second opinion and note it; never review an empty diff. Write `$D/inputs.md` with one line each for `Repository:` (the worktree), `Diff:` (`$D/pr.diff`), `Task:` (the PR title) and `User-facing surface:` (yes or no), then `Acceptance criteria:` followed by the PR body, then a **"Prior review context"** block with the summary from step 2, so it reasons about what was already raised instead of repeating it. Run `second-opinion code-reviewer "$D/inputs.md" "$WT" > "$D/review.log" 2>&1` as a background Bash call, with `D` and `WT` set as above in the same command, do your own review meanwhile, and read its verdict from the log before step 4. If it is still running 30 minutes after it started, stop it and note it. It exits 3 when no second-opinion model is configured; you are then the only reviewer.
+> - **opus (you):** read the diff (`git -C "$WT" diff {base_sha}...$CUR_HEAD`) and the surrounding files yourself; form your own findings.
 >
 > These reviewers run as external CLIs / your own reasoning — **do not** call `vision:review` or spawn any Task/Agent subagent (nesting is unreliable here).
 >
