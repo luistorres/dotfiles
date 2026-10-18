@@ -87,8 +87,9 @@ A per-task review never sees the stack as a whole: two tasks can disagree on a c
 same thing two ways, or leave dead code behind the other. Once the stack is three tasks deep, run
 one more `vision:code-reviewer` pass before the last task's PR, over the accumulated diff
 (`origin/<default branch>...<tip branch>`) with the stack's criteria. Measured, the cross-task
-criticals came only from stacks this deep. Fix each finding on the lowest branch that owns it, merge
-forward to the tip in the same turn, and verify the fix commits as `vision:review` does. Tick the
-last task's `drift` box when that verify pass reports no criticals.
+criticals came only from stacks this deep. Triage its findings as `vision:review` does. Make each
+fix on the lowest branch that owns it, merge forward to the tip in the same turn, and verify the fix
+commits. Tick the last task's `drift` box once nothing needed fixing, or once that verify pass reports
+no criticals.
 
 After the last task's PR, set `Status: done`.
