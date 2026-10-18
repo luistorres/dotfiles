@@ -90,6 +90,14 @@ grep -l '^Status: in_progress' docs/vision/*.md 2>/dev/null | sort
 
 Work these out against the actual code, then present them in plan mode for approval:
 
+- **Open decisions, first:** when the request leaves product decisions open (what it should do, for
+  whom, which trade-off to take), settle them with the owner before writing any criterion; criteria
+  built on guesses only move the guessing into review. Invoke `mattpocock-skills:grilling`, adding
+  `mattpocock-skills:domain-modeling` when the work coins domain terms or touches an ADR. Without
+  that plugin, ask in rounds yourself: every question whose prerequisites are settled, numbered,
+  each with your recommended answer, until nothing is left assumed. Look facts up instead of asking
+  for them. Write what was settled into the plan below: a decision that lives only in the
+  conversation is lost at the next compaction.
 - **Acceptance criteria:** concrete, checkable, and complete enough that someone could verify the
   work without asking you anything.
 - **Shape:** `single` (one PR); `stack` (several PRs one owner ships in order; read `stack.md` next
@@ -99,10 +107,8 @@ Work these out against the actual code, then present them in plan mode for appro
 - **Risk:** `low`, `standard` or `high`, as `vision:review` defines them. It sets how much review
   the work gets.
 - **Design:** if it is settled, the criteria and approach are the plan. If it is not (several viable
-  shapes, a new module, territory nobody knows), write a short plan at
-  `docs/vision/plans/<YYYY-MM-DD>-<slug>.md` and run `vision:review` on it before approval. When the
-  open questions are about the product rather than the code, ask the owner first, in one message,
-  or run `mattpocock-skills:grilling` if it is installed.
+  shapes, a new module, territory nobody knows, or decisions a grilling just settled), write a short
+  plan at `docs/vision/plans/<YYYY-MM-DD>-<slug>.md` and run `vision:review` on it before approval.
 - If an LLM will make a judgment over data (generate, summarise, classify, extract, score or
   decide, a single call included), invoke `agent-atlas:agentic-dev` and carry the checklists of the
   stations it marks applicable into the criteria.
