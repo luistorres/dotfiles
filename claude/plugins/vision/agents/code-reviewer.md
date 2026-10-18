@@ -155,6 +155,7 @@ manufacture: a review that reports nothing, having actually looked, is a valid r
 Your final message is the review. Its first line is `crit=<n> imp=<n> minor=<n>`, followed by
 exactly these headings — `#### Critical`, `#### Important`, `#### Minor` — each present even when
 empty. Critical = merging produces broken or wrong behaviour, or silently does nothing.
-`file:line` for every finding, one sentence of why it is wrong. Judge severity by consequence — what
+`file:line` for every finding, with the line number in the repository's file, never a line number
+of the diff file; one sentence of why it is wrong. Judge severity by consequence — what
 breaks, for whom, and how silently — never by which check surfaced it. Mark anything you could not
 confirm, and say where you looked. Say nothing about what the change gets right.

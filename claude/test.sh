@@ -395,6 +395,12 @@ test_vision_second_opinion_fails_without_severity_headings() {
     fails_with 'no crit= line' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
 }
 
+test_vision_second_opinion_accepts_a_formatted_count_line() {
+  local d
+  d=$(opinion_dir) && answer "$d" $'`crit=0 imp=1 minor=0`\n#### Critical\n#### Important\n- a.ts:3 x\n#### Minor' &&
+    second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1
+}
+
 test_vision_second_opinion_fails_when_a_heading_is_missing() {
   local d
   d=$(opinion_dir) && answer "$d" $'crit=0 imp=0 minor=0\n#### Critical\n#### Important' &&

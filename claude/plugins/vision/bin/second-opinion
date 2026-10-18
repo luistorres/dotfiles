@@ -44,7 +44,7 @@ problem=""
 if [ "$rc" -ne 0 ] || [ "$(field '.is_error // false')" != false ]; then
   problem="the review session failed (exit $rc, $(field '.subtype // "no result"'))"
 else
-  for line in '^crit=' '^#### Critical' '^#### Important' '^#### Minor'; do
+  for line in 'crit=[0-9]' '^#### Critical' '^#### Important' '^#### Minor'; do
     grep -q "$line" <<< "$result" || problem="the review has no crit= line or is missing a severity heading"
   done
 fi
