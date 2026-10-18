@@ -11,7 +11,7 @@ split before anyone can build. A large change with one owner is a stack instead.
 2. The issues, each a vertical slice someone can take on its own. Each body stands alone: context,
    acceptance criteria, dependencies and risk. It never points at a local planning document, which
    the person who picks it up will not have.
-3. One `vision:plan-reviewer` pass over the PRD and the issue set together, before anything is filed.
+3. Review the PRD and the issue set together as a plan with `vision:review`, before anything is filed.
 4. Ask the owner, as part of the approval, where the issues live: in the state file, or in a
    tracker such as GitHub (`gh issue create`), which then owns their status.
 
