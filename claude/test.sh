@@ -376,7 +376,7 @@ test_vision_second_opinion_runs_read_only_with_the_brief() {
     check grep -qx -- --setting-sources= "$d/args" &&
     check grep -qx -- --no-session-persistence "$d/args" &&
     check cmp -s "$d/stdin" "$d/run/inputs.md" && check [ "$(cat "$d/cwd")" = "$d/repo" ] &&
-    check grep -q '^You are an adversarial reviewer' "$d/brief" && check fails grep -q '^name: code-reviewer' "$d/brief" &&
+    check grep -q '^You review one change' "$d/brief" && check fails grep -q '^name: code-reviewer' "$d/brief" &&
     check [ "$(tail -n 1 "$d/err")" = 'second-opinion: model=other-model turns=7 input=10 cache_read=20 cache_write=30 output=40' ]
 }
 
