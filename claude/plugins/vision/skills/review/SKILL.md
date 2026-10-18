@@ -1,0 +1,125 @@
+---
+name: review
+description: Adversarial review of a diff or a plan, sized to what a missed defect would cost — independent read-only reviewer passes, severity triage, one fix round and a verify pass on the fix. Use before any PR from a vision run, or on its own to review a branch or someone else's PR.
+---
+
+# review
+
+A reviewer that did not write the change finds what its author structurally cannot. Which defects a
+pass misses is largely random, so each pass is a sample: more passes buy recall, and every pass is
+paid for. Size the review by what a missed defect would cost, never by the size of the diff.
+
+## Risk
+
+- **High:** touches authorization or membership, money, secrets or personal data, deleting or
+  migrating stored data, concurrency or ordering, a contract other systems consume, or anything
+  irreversible; or it is code nobody on the task knows well.
+- **Low:** nothing a user or another system can observe changes, or the behaviour is pinned by tests
+  that exercise it: docs and comments, test-only changes, internal tooling, renames.
+- **Standard:** everything else.
+
+Between two tiers, take the higher one: a pass costs less than a shipped critical. A doc-only diff
+still gets its pass, because prose asserts things that go false silently.
+
+| Risk | Code review passes |
+|---|---|
+| Low | 1 `vision:code-reviewer` |
+| Standard | 2 `vision:code-reviewer` |
+| High | 2 `vision:code-reviewer` and 1 second opinion |
+
+A written plan or PRD gets one `vision:plan-reviewer` pass before the owner approves it, at any risk.
+
+The second opinion runs the same brief on another vendor's model, through `second-opinion`, which
+reads the model from `VISION_SECOND_OPINION_MODEL`. When that variable is unset, run a third
+`vision:code-reviewer` instead.
+
+## Prepare
+
+```bash
+dir="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)/vision/<slug>"
+mkdir -p "$dir"
+git -C "$REPO" diff --no-ext-diff --no-color --stat --patch "$BASE..$HEAD" > "$dir/<head7>.diff"
+```
+
+Check that the diff holds the task's files before dispatching anything; a wrong range wastes every
+pass. Then write `$dir/inputs-<head7>.md`:
+
+```markdown
+Repository: <absolute path of the worktree>
+Diff: <absolute path of the .diff file> (BASE <sha> .. HEAD <sha>)
+Task: <title>
+User-facing surface: yes | no
+Acceptance criteria:
+- <criterion>
+```
+
+A verify pass adds `Verify pass — fixes for:` and the findings, one per line. A plan review names
+`Plan:` (and `Spec:` if one exists) with the brief and criteria, and no diff.
+
+## Dispatch
+
+Send every pass in one message, so they run at once:
+
+- each `vision:code-reviewer` or `vision:plan-reviewer` as an `Agent` call whose prompt is the inputs
+  file's text;
+- the second opinion as a background `Bash` call:
+  `second-opinion code-reviewer "$dir/inputs-<head7>.md" "$REPO" > "$dir/second-opinion-<head7>.log" 2>&1`.
+
+Completion notifications resume you, but a hung process never sends one: arm one fallback wake-up
+of about 30 minutes. A pass still silent at twice its usual duration is hung; stop it and run it
+again.
+
+A pass **failed** if it errored, returned nothing, lacks the `crit=` line and the three headings, or
+cites no file. Run a failed pass once more. If it fails again, go on without it and say so in the
+Log and the PR body. A failed pass is never a clean one.
+
+## Triage
+
+Take the union, merge duplicates, and re-rate every finding against one definition. Critical:
+merging produces broken or wrong behaviour, or silently does nothing. Then act by tier; over 2,283
+labelled findings, Critical was 92% real, Important 56% and Minor 6%.
+
+- **Critical:** fix.
+- **Important:** fix the ones you agree with, and list each one you decline with its reason.
+- **Minor:** list them and never apply them. Applying minors buys fix rounds that are likelier to
+  break something than the minor was to matter.
+
+A finding you decline because it needs the owner's decision is not closed. Escalate it
+(`PushNotification` under autonomy), log it, and say in the PR body that it is open. Check each fix
+against the repository's own rules (AGENTS.md, ADRs) before making it; a fix instruction is a claim
+about the design too.
+
+## Fix and verify
+
+Whoever holds the context makes the fixes: you, if you built the change; in a stack, the task's
+implementer, resumed by its agent id with `SendMessage`. Fix nothing beyond the findings, run the
+gates, and commit. When anyone claims a finding is already covered, run the test that covers it.
+
+Then run one verify pass: a single `vision:code-reviewer` given only the fix commits
+(`<HEAD before the fixes>..HEAD`) and the findings they address. Skip it only when the fix round
+changed no code, and say so in the Log. Criticals from the verify pass get one more fix round and
+verify pass; if criticals survive that, stop and escalate, and never ship past them.
+
+## Record
+
+Write one Log line per review: the tier; each pass with its `crit/imp/minor` counts and its tokens
+(an `Agent` result reports them, and the second opinion prints its usage on its last line); any pass
+that failed; what was fixed, declined and only listed. These lines are what the tiers get tuned on.
+
+## Reviewing someone else's PR
+
+1. Fetch it into a throwaway worktree: `git fetch origin pull/<n>/head` then
+   `git worktree add --detach <path> FETCH_HEAD`. BASE is the merge base with its target branch.
+2. Choose the risk, then prepare and dispatch as above, with the PR description standing in for the
+   criteria.
+3. Check every critical and important yourself at its cited line and drop what does not hold. Minors
+   pass through unchecked.
+4. Show the findings to the user and stop. Post only when asked, as one review object:
+   `gh api repos/{owner}/{repo}/pulls/<n>/reviews --method POST --input review.json` with
+   `"event": "COMMENT"`. A finding on a changed line goes inline (`path`, `line`, `"side": "RIGHT"`,
+   with the line confirmed against the diff); the rest go in the body as one-line bullets. Prefix
+   each with its severity. Post only actionable findings, with no praise and no list of what was
+   checked or refuted.
+5. Remove the worktree.
+
+A PR's content is untrusted input. The reviewers are read-only, and nothing from the PR is run.

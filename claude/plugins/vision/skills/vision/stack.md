@@ -1,0 +1,81 @@
+# Stacks
+
+A stack is several PRs that one owner ships in order. Each task gets its own branch, worktree,
+review and PR. You orchestrate: a fresh `vision:implementer` builds each task, which keeps every
+task's reading out of your context.
+
+## Decompose
+
+The task list is part of what the owner approves at [1].
+
+- Task 1 is the tracer bullet: the thinnest slice that crosses every layer the work needs and proves
+  the shape end to end. When there are no layers, it is the foundational task.
+- Every task is a vertical slice that ships and is reviewed on its own, with its own criteria.
+- Prefer fewer, larger tasks to many small ones that each need the same context; every task pays
+  for a fresh implementer's reading.
+- Order the tasks by dependency. A task that depends on another branches from that task's branch.
+- Each task carries its own risk, which can be higher than the stack's.
+
+## State file
+
+`docs/vision/<YYYY-MM-DD>-<slug>.md` in the main checkout:
+
+```markdown
+---
+Status: in_progress
+Shape: stack
+Risk: standard
+Current: 0/<N>
+---
+# <stack title>
+
+<one line: what the whole stack delivers>
+
+## [ ] Task 1: <title>
+- [ ] build · [ ] review · [ ] fix · [ ] verify · [ ] pr
+- **Branch:** lt/<task-slug>
+- **Base:** origin/<default branch>
+- **Risk:** standard
+- **Worktree:**
+- **Implementer:**
+- **PR:**
+
+### Acceptance criteria
+- [ ] ...
+
+## [ ] Task 2: <title>
+- [ ] build · [ ] review · [ ] fix · [ ] verify · [ ] pr
+- **Branch:** lt/<task-slug>
+- **Base:** lt/<task-1-slug>
+...
+
+## Log
+- <YYYY-MM-DD> framed: <N> tasks
+```
+
+## Each task, in order
+
+1. Create its worktree from its base, as in [1], and record the path.
+2. Dispatch a fresh `vision:implementer` with the worktree path, the task block and the plan path,
+   and record its agent id under `Implementer:`. Fix rounds resume that agent with `SendMessage`,
+   because it already holds the worktree and its own reasoning. If the resume fails, or its context
+   is spent, dispatch a fresh implementer with the task block and the findings.
+3. Read its diff against the criteria yourself; an implementer reporting done is a claim.
+4. Run `vision:review` with the task's risk.
+5. For a task that depends on another, check `git merge-base --is-ancestor <base branch> HEAD`
+   before its PR. If the base moved because fixes landed below, merge it forward, then grep the
+   result for each of those fixes; a clean merge can still drop one. Never rebase a published
+   stack, because that rewrites reviewed commits and force-pushes every PR above it.
+6. Run `pr-create`, adding `Depends on #<n> (<base branch>).` to the body of a dependent task's PR.
+   Tick the task, record its PR, and advance `Current:`.
+
+## Drift review
+
+A per-task review never sees the stack as a whole: two tasks can disagree on a contract, name the
+same thing two ways, or leave dead code behind the other. Once the stack is three tasks deep, run
+one more `vision:code-reviewer` pass before the last task's PR, over the accumulated diff
+(`origin/<default branch>...<tip branch>`) with the stack's criteria. Measured, the cross-task
+criticals came only from stacks this deep. Fix each finding on the lowest branch that owns it, then
+merge forward.
+
+After the last task's PR, set `Status: done`.

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "vision-local",
+  "metadata": {
+    "description": "Local marketplace hosting the vision harness and its pane."
+  },
+  "owner": {
+    "name": "Luis Torres"
+  },
+  "plugins": [
+    {
+      "name": "vision",
+      "description": "Ship coding work end-to-end, from a one-line fix to a stack of PRs or a set of issues, with resumable state and adversarial review sized to the risk.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Luis Torres"
+      },
+      "source": "./",
+      "category": "workflow",
+      "tags": [
+        "workflow",
+        "review",
+        "orchestration"
+      ]
+    },
+    {
+      "name": "vision-view",
+      "description": "A /vision-view pane: the active vision run as a tree of steps, with the agents and second-opinion reviewers working under each step.",
+      "version": "0.3.0",
+      "author": {
+        "name": "Luis Torres"
+      },
+      "source": "./vision-view",
+      "category": "workflow",
+      "tags": [
+        "vision",
+        "pane",
+        "agents"
+      ]
+    }
+  ]
+}

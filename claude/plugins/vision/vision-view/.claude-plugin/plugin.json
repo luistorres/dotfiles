@@ -1,0 +1,9 @@
+{
+  "name": "vision-view",
+  "version": "0.3.0",
+  "description": "A /vision-view pane: the active vision run's steps, and a tree of running subagents and second-opinion reviewers",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luis Torres"
+  }
+}

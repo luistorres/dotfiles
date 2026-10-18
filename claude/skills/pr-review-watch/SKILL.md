@@ -1,6 +1,6 @@
 ---
 name: pr-review-watch
-description: Watch GitHub for PRs requesting Luis's review across repos cloned under ~/projects, and for each new one run a triangulated review (codex + opus) in an isolated worktree, posting a single COMMENT review only when there are actionable findings. Invoke for one scan-and-process pass — typically driven on an interval by /loop. Triggers on "run the pr-review-watch skill", "check my review queue", "scan for new review requests".
+description: Watch GitHub for PRs requesting Luis's review across repos cloned under ~/projects, and for each new one run a two-model review (Opus plus a second-opinion model) in an isolated worktree, posting a single COMMENT review only when there are actionable findings. Invoke for one scan-and-process pass — typically driven on an interval by /loop. Triggers on "run the pr-review-watch skill", "check my review queue", "scan for new review requests".
 ---
 
 # pr-review-watch — automated PR-review-request watcher
@@ -132,7 +132,7 @@ Log one line per pass, e.g. `"reviewed #123 (3 findings posted), #124 (clean), #
 
 Dispatch with the **Agent tool**, `subagent_type: "claude"`, **`model: "opus"`** (pinned — reviews are always full-strength regardless of the loop's session model). One subagent per PR. Fill the template below.
 
-> You are an unattended PR-review subagent acting as Luis (`luistorres`). Review ONE pull request in an isolated worktree using a triangulated review, and **post a single GitHub review only if there are actionable findings**. You are running unattended — there is no human to confirm with, so apply the posting decision yourself per the rules below.
+> You are an unattended PR-review subagent acting as Luis (`luistorres`). Review ONE pull request in an isolated worktree using a two-model review, and **post a single GitHub review only if there are actionable findings**. You are running unattended — there is no human to confirm with, so apply the posting decision yourself per the rules below.
 >
 > **PR:** `{owner}/{repo}` #{number} — "{title}"
 > **Local repo:** `{repo_path}`
@@ -160,16 +160,16 @@ Dispatch with the **Agent tool**, `subagent_type: "claude"`, **`model: "opus"`**
 > ```
 > Build a compact **prior-context summary**: which issues were already raised (and by whom), which the **author refuted or already fixed** (look for replies, "fixed in `<sha>`", resolved threads), and whether **Luis (`luistorres`) already reviewed this PR**. You'll use this in steps 4 and 5. If Luis already reviewed and nothing material changed since, expect few or zero net-new findings — that is a valid outcome, not a failure.
 >
-> ### 3. Run the triangulated review (NO nested Claude subagents)
+> ### 3. Run the two-model review (NO nested Claude subagents)
 > You are Opus and you are the second reviewer + the verifier yourself. Gather two independent opinions over `{base_sha}...$CUR_HEAD`:
-> - **codex (GPT-6.1 Sol):** invoke the `/codex-review` skill. Because `$WT` is a **detached-HEAD worktree**, tell codex explicitly to diff `{base_sha}...$CUR_HEAD` (don't rely on it inferring the base). Include a short **"Prior review context"** block in the brief (the summary from step 2 — what's already been raised/refuted/fixed) so it reasons about it instead of repeating it. Standard flags: `stdbuf … codex exec --model gpt-6.1-sol --sandbox read-only -c model_reasoning_effort=high "…" </dev/null > /tmp/codex-{owner}-{repo}-pr{number}.log 2>&1` (the repo slug in the path keeps logs unique if PRs are ever reviewed in parallel). Read the verdict from the tail of the log.
+> - **second opinion (another vendor's model):** write the diff and an inputs file as `vision:review`'s Prepare section describes, with `{base_sha}..$CUR_HEAD` as the range, the PR title and body as the criteria, and a **"Prior review context"** block (the summary from step 2) so it reasons about what was already raised instead of repeating it. Run `second-opinion code-reviewer <inputs file> "$WT" > /tmp/second-opinion-{owner}-{repo}-pr{number}.log 2>&1` (the repo slug keeps logs unique if PRs are reviewed in parallel) and read the verdict from the log. It exits 3 when no second-opinion model is configured; you are then the only reviewer.
 > - **opus (you):** read the diff (`git -C "$WT" diff {base_sha}..$CUR_HEAD`) and the surrounding files yourself; form your own findings.
 >
-> These reviewers run as external CLIs / your own reasoning — **do not** call `flow:agents-review` or spawn any Task/Agent subagent (nesting is unreliable here).
+> These reviewers run as external CLIs / your own reasoning — **do not** call `vision:review` or spawn any Task/Agent subagent (nesting is unreliable here).
 >
-> If codex fails/times out, proceed with your own review and note it (a missing reviewer never blocks).
+> If the second opinion fails, times out or is not configured, proceed with your own review and note it (a missing reviewer never blocks).
 >
-> **Resilience — transient API errors.** If any step fails with a transient server error (HTTP 429 / 529 / "overloaded"), pause briefly and **retry that step once** before giving up — don't discard codex/cursor output an earlier step already produced. The codex and cursor verdicts persist in their `/tmp/*-{owner}-{repo}-pr{number}.log` files, so on retry, reuse a log that already completed instead of re-running that CLI. If it still fails after one retry, jump to cleanup (step 6) and return `OUTCOME=error` with a short `note`; the orchestrator retries the whole PR next tick and, since nothing was posted, there's no double-post risk.
+> **Resilience — transient API errors.** If any step fails with a transient server error (HTTP 429 / 529 / "overloaded"), pause briefly and **retry that step once** before giving up — don't discard second-opinion output an earlier step already produced. Its verdict persists in `/tmp/second-opinion-{owner}-{repo}-pr{number}.log`, so on retry, reuse a log that already completed instead of re-running it. If it still fails after one retry, jump to cleanup (step 6) and return `OUTCOME=error` with a short `note`; the orchestrator retries the whole PR next tick and, since nothing was posted, there's no double-post risk.
 >
 > ### 4. Merge → verify → synthesize, then SUBTRACT what's already covered (review-mode R3/R5)
 > Combine all findings. **Adversarially verify**: for each `critical`/`important`/`high`/`medium` finding, re-read the actual code in `$WT` and try to **refute** it — drop false positives, correct over-stated severity. Dedupe across reviewers. Then **subtract anything already handled in the prior conversation (step 2)**: drop findings already raised by an existing review/comment, already **refuted by the author or a prior reviewer**, or already **fixed in the code at `$CUR_HEAD`** (re-check the current code — never trust a stale claim either way). Leave nits as-is. Produce a final list of **net-new** findings sorted by severity (blocker → high → medium → low → nit), each with `file`, head-revision `line` (or null), and a one-line recommendation. **Surgical, actionable-only** — no praise, no restating prior findings, no "looks good".
@@ -238,7 +238,7 @@ The per-PR review subagent is pinned to Opus inside this skill, so reviews stay 
 - **Repo not cloned** → `skipped_not_cloned`, logged, never auto-cloned.
 - **Draft PRs / own PRs** → skipped.
 - **Worktree leak** → subagent cleans up on all paths; orchestrator Step 4.4 is a backstop.
-- **Reviewer failure** (codex/cursor times out) → review proceeds with the rest; noted in `note`. Never blocks.
+- **Reviewer failure** (the second opinion fails or times out) → review proceeds with the rest; noted in `note`. Never blocks.
 - **No tick overlap** in a single session — the next tick can't fire until the current turn yields, so a PR can't be reviewed twice concurrently. (A future headless/launchd variant would need a lockfile.)
 - **Already reviewed by you (manual or watcher)** → never auto-reviewed at a head you've already reviewed. Submitting any review clears your GitHub review-request, so the PR usually leaves the search on its own; and even if you're re-requested, the already-reviewed guard (no `luistorres` review with `commit_id == current head`) skips it without spending tokens. Only genuinely new commits past your last review get picked up.
 - **Re-push after review** → head SHA changes → one fresh review next pass, **up to the 2-review cap**. A 3rd push is recorded `capped` and not auto-reviewed (use `--force` to re-review manually).

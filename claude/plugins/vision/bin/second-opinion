@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ $# -ne 3 ]; then
+  echo "usage: second-opinion <agent> <inputs-file> <repository>" >&2
+  exit 2
+fi
+
+here=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+agent_file="$here/../agents/$1.md"
+inputs=$2
+repo=$3
+model=${VISION_SECOND_OPINION_MODEL:-}
+
+[ -n "$model" ] || { echo "Error: VISION_SECOND_OPINION_MODEL is not set" >&2; exit 3; }
+[ -f "$agent_file" ] || { echo "Error: no agent named $1" >&2; exit 2; }
+[ -f "$inputs" ] || { echo "Error: no inputs file at $inputs" >&2; exit 2; }
+[ -d "$repo" ] || { echo "Error: no repository at $repo" >&2; exit 2; }
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next } !front' "$agent_file" > "$work/brief.md"
+
+# Read-only by construction: no tool can write or run a command, and no hook or MCP server from the
+# reviewed repository or the user's setup runs inside the session.
+rc=0
+(cd "$repo" && claude -p \
+  --model "$model" \
+  --tools Read,Grep,Glob \
+  --permission-mode dontAsk \
+  --strict-mcp-config \
+  --settings '{"disableAllHooks":true}' \
+  --append-system-prompt-file "$work/brief.md" \
+  --add-dir "$(dirname "$inputs")" \
+  --max-turns "${VISION_SECOND_OPINION_MAX_TURNS:-80}" \
+  --no-session-persistence \
+  --output-format json < "$inputs" > "$work/out.json") || rc=$?
+
+field() { jq -r "$1" "$work/out.json" 2> /dev/null || true; }
+result=$(field '.result // ""')
+problem=""
+if [ "$rc" -ne 0 ] || [ "$(field '.is_error // false')" != false ]; then
+  problem="the review session failed (exit $rc, $(field '.subtype // "no result"'))"
+elif ! grep -q '^crit=' <<< "$result" || ! grep -q '^#### Critical' <<< "$result"; then
+  problem="the review has no crit= line or severity headings"
+fi
+
+printf '%s\n' "$result"
+[ -z "$problem" ] || echo "Error: $problem" >&2
+jq -r --arg model "$model" '"second-opinion: model=\($model) turns=\(.num_turns // "?") input=\(.usage.input_tokens // 0) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) output=\(.usage.output_tokens // 0)"' "$work/out.json" >&2 2> /dev/null ||
+  echo "second-opinion: model=$model, no usage reported" >&2
+[ -z "$problem" ]

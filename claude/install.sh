@@ -5,7 +5,7 @@ SRC=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPO=$(dirname "$SRC")
 DEST=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 STAMP=$(date +%Y%m%d-%H%M%S)-$$
-SKILLS=(codex-review cursor-review lean-flow mistral-review opencode-review pr-create pr-jira pr-message pr-review-watch request-feedback-artifact stacked-prs visual-debrief)
+SKILLS=(pr-create pr-jira pr-message pr-review-watch request-feedback-artifact stacked-prs visual-debrief)
 MCP_NAME=github_inline_comment
 LINKED=""
 BACKUPS=""
@@ -47,7 +47,7 @@ preflight() {
   for tool in claude git jq; do
     command -v "$tool" > /dev/null || { echo "install.sh: $tool is required" >&2; exit 1; }
   done
-  for tool in rtk python3 gh codex agent opencode vibe npx; do
+  for tool in rtk python3 gh npx; do
     command -v "$tool" > /dev/null || warn "$tool not found; the hook or skill that uses it will not work"
   done
   if command -v gh > /dev/null && ! grep -q 'github/gh-stack' <<< "$(gh extension list 2> /dev/null)"; then
@@ -112,10 +112,10 @@ claude-plugins-official anthropics/claude-plugins-official
 impeccable pbakaus/impeccable
 claude-code-warp warpdotdev/claude-code-warp
 ponytail DietrichGebert/ponytail
-flow-local $SRC/plugins/flow
+vision-local $SRC/plugins/vision
 agent-atlas-local $SRC/plugins/agent-atlas
 EOF
-  for id in $(jq -r '.enabledPlugins | keys[]' "$SRC/settings.json"); do
+  for id in $(jq -r '.enabledPlugins | to_entries[] | select(.value) | .key' "$SRC/settings.json"); do
     claude plugin install "$id" --scope user < /dev/null || fail "could not install $id"
   done
 }

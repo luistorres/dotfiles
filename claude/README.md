@@ -3,9 +3,9 @@
 `install.sh` rebuilds my Claude Code user setup in `~/.claude` from this folder:
 
 - `CLAUDE.md` and `RTK.md`: the user-level directives, installed as copies.
-- `hooks/comment-lint.py`, `commands/code-review.md` and the twelve skills in `skills/`, installed as links into this clone.
+- `hooks/comment-lint.py`, `commands/code-review.md` and the seven skills in `skills/`, installed as links into this clone.
 - `settings.json`: a template merged into `~/.claude/settings.json`.
-- Plugins: `flow`, `flow-view` and `agent-atlas` from `plugins/` (local marketplaces), plus `superpowers`, `frontend-design` and `mattpocock-skills` from the official marketplace, and `impeccable`, `warp` and `ponytail` from their GitHub marketplaces.
+- Plugins: `vision`, `vision-view` and `agent-atlas` from `plugins/` (local marketplaces), plus `frontend-design` and `mattpocock-skills` from the official marketplace, and `impeccable`, `warp` and `ponytail` from their GitHub marketplaces. The template sets `superpowers` to disabled: its session hook pushes skill chains that cost more than they return under a fixed budget.
 - The GitHub MCP server `github_inline_comment`, using the token from `gh auth token`.
 
 ## Prerequisites
@@ -13,7 +13,8 @@
 - Claude Code (native install), `git` and `jq`. The installer stops without them.
 - `gh`, logged in with `gh auth login`, plus the stack extension: `gh extension install github/gh-stack`.
 - `rtk` (a hook rewrites shell commands through it) and `python3` (for the comment hook).
-- The review CLIs some skills call: `codex`, Cursor's `agent`, `opencode` and `vibe`, plus `npx`.
+- `npx`, for the projects whose lint and format commands use it.
+- Optionally, `VISION_SECOND_OPINION_MODEL` in `~/.zshrc.local`: a model `claude --model` can reach, which vision uses for its second-opinion reviewer. When it is unset, vision runs another Claude pass instead.
 
 The installer warns about each missing optional tool and carries on.
 
@@ -33,11 +34,22 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 - `settings.json` is merged on every run. Keys this template sets win, so a change made inside Claude Code to one of them (the model or permissions, say) is reset by the next install, with a backup kept. Keys the template doesn't set, and hooks other tools add, are kept.
 - The local plugins load in place from `plugins/`: edits take effect at the next session start or after `/reload-plugins`. If you bump a plugin's version, change it in both its `plugin.json` and the `marketplace.json` entry.
 
+## vision
+
+`plugins/vision` is the harness that ships coding work. Each part is the kind of component it is for a reason:
+
+- **Skills** are procedures, loaded only when used: `vision` runs a task from framing to PR, and `review` sizes and runs adversarial review. The stack and issue-set procedures are reference files the `vision` skill opens only when a task needs them.
+- **Agents** are for work that must not share the author's context: `code-reviewer` and `plan-reviewer` can only read and search, and `implementer` builds one task of a stack in its own context. Their prompts live in the agent files, so the orchestrator passes only each run's inputs.
+- **`bin/second-opinion`** runs the code-reviewer brief in a separate `claude -p` session on the model in `VISION_SECOND_OPINION_MODEL`, with read-only tools and no hooks or MCP servers.
+- **`hooks/pr-gate`** blocks `gh pr create` while the run's state file shows its review, fix or verify step unticked. A rule that must always hold is a hook, not a sentence in a prompt.
+
+Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run.
+
 ## Leak guard
 
 This repo is public. The installer points `core.hooksPath` at `.githooks`, whose hooks block a commit when its added lines, file names or message contain a secret-shaped string, an absolute home path or a term listed in `.git/info/private-terms` (one per line, case-insensitive, never committed; a fresh clone starts without it, so add your own), and when it stages a `.DS_Store` file. Binary files aren't scanned.
 
-`claude/test.sh` tests the guard, the settings merge and the installer. The installer tests run offline in a scratch home folder: the remote marketplaces and plugins are recorded rather than fetched.
+`claude/test.sh` tests the guard, the settings merge, vision's second-opinion script and PR gate, and the installer. Everything runs offline: a stand-in `claude` answers the second-opinion tests, and the installer tests run in a scratch home folder where the remote marketplaces and plugins are recorded rather than fetched. `claude plugin test claude/plugins/vision/vision-view` runs the pane's tests.
 
 ## Not included
 
