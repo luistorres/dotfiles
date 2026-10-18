@@ -33,7 +33,7 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 
 - Skills, the hook and the command are links, so edits land in this clone. Claude Code's edit tools refuse to write through a link and write to the real path here instead.
 - `CLAUDE.md` and `RTK.md` are copies, because Cowork in the desktop app skips a linked `~/.claude/CLAUDE.md`. Edit the copy here and re-run the installer; edits made to the installed copy are replaced by the next run (with a backup). Cowork also skips the `@RTK.md` import.
-- `settings.json` is merged on every run. Keys this template sets win, so a change made inside Claude Code to one of them (the model or permissions, say) is reset by the next install, with a backup kept. Keys the template doesn't set, and hooks other tools add, are kept.
+- `settings.json` is merged on every run. Keys this template sets win, so a change made inside Claude Code to one of them (the model or permissions, say) is reset by the next install, with a backup kept. Keys the template doesn't set, and hooks other tools add, are kept. The template sets no `advisorModel`: each advisor call re-reads the whole conversation, uncached, on the advisor's model, so set it in the live settings only on a machine where that is worth paying for.
 - The local plugins load in place from `plugins/`: edits take effect at the next session start or after `/reload-plugins`. If you bump a plugin's version, change it in both its `plugin.json` and the `marketplace.json` entry.
 
 ## vision

@@ -1,6 +1,5 @@
 {
   "model": "opus",
-  "advisorModel": "fable",
   "effortLevel": "high",
   "modelSettings": {
     "claude-fable-5": {

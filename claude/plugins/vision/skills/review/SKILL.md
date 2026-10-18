@@ -113,11 +113,12 @@ gates, and commit. When anyone claims a finding is already covered, run the test
 
 Then run one verify pass: a single `vision:code-reviewer` given only the fix commits
 (`<HEAD before the fixes>..HEAD`) and the findings they address. Skip it only when the fix round
-changed no code, and say so in the Log. Criticals from the verify pass get one more fix round and
-verify pass; if criticals survive that, stop and escalate, and never ship past them. The verify step
-is ticked only when the last verify pass reported no criticals, or was skipped because no code
-changed. Importants a verify pass raises are triaged as above, and fixing them does not call for
-another verify pass.
+changed no code, and say so in the Log. No commit reaches a PR unreviewed, so whatever a verify pass
+leads you to fix gets its own verify pass over just those commits. To keep that finite, fix the
+first verify pass's criticals and the importants you agree with; from every later verify pass, fix
+only criticals and list the rest. If criticals survive two fix rounds, stop and escalate, and never
+ship past them. The verify step is ticked only when the last verify pass covered the branch's last
+commit and reported no criticals, or was skipped because no code changed.
 
 ## Record
 

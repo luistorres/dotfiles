@@ -153,7 +153,9 @@ git worktree add .claude/worktrees/<slug> -b lt/<slug> origin/<default branch>
 The plan is a hypothesis: it is what you believed before opening the code. When the repository
 contradicts it (a convention you did not know, a generated artifact to regenerate, a doc already
 false, a guard the change needs), the code wins. Do the right thing and log what changed and why.
-That licence never covers changing what the task is; that is a new task, and it needs the owner.
+That licence never covers changing what the task is; that is a new task, and it needs the owner. A
+deliverable the plan names stays in scope when the plan leaves its details open: build the simplest
+version that serves it and log the details you chose. Leaving it out is a scope change.
 
 ## [2] Build
 
