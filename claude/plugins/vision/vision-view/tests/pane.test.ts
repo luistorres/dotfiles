@@ -32,6 +32,8 @@ type World = {
   statuses: (string | undefined)[]
   opens: { rows?: number; focus?: true }[]
   isPlaced: boolean
+  canPlace: boolean
+  closes: number
   gh: 'ok' | 'broken' | 'slow'
   isReadBroken: boolean
   hangingReads: number
@@ -47,6 +49,8 @@ const world = (over: Partial<World> = {}): World => ({
   statuses: [],
   opens: [],
   isPlaced: true,
+  canPlace: true,
+  closes: 0,
   gh: 'ok',
   isReadBroken: false,
   hangingReads: 0,
@@ -81,9 +85,12 @@ const stubs = (on: On, world: World, clock: Clock) => {
   on('agent.list', () => (world.isAgentListBroken ? { deny: 'no agents here' } : { value: world.agents }))
   on('ui.open', ($, e) => {
     world.opens.push(e)
-    return { value: { isPlaced: true } }
+    return { value: world.canPlace ? { isPlaced: true as const } : { isPlaced: false as const, reason: 'no-surface' } }
   })
-  on('ui.close', () => ({ value: undefined }))
+  on('ui.close', () => {
+    world.closes += 1
+    return { value: undefined }
+  })
   on('ui.panes', () => ({ value: [{ id: 'vision-view', title: 'Vision', isShown: true, isFocused: true, isPlaced: world.isPlaced }] }))
   on('ui.status', ($, e) => {
     world.statuses.push(e.text)
@@ -271,6 +278,23 @@ test('a subagent resumed under its id shows how long it has run since, not since
   expect(await screen($)).toContain('● vision:code-reviewer · Review task 2 · running 4s')
 })
 
+test('a subagent stays on screen after the engine stops listing it', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ agents: [{ id: 'a1', description: 'probe', type: 'Explore', status: 'running' }] })
+  stubs(on, w, clock)
+
+  await begin($)
+  await clock.advance(2000)
+  w.agents = [{ ...w.agents[0]!, status: 'completed' }]
+  await clock.advance(4000)
+  w.agents = []
+  await clock.advance(4000)
+  expect(await screen($)).toContain('1 finished · h shows them')
+
+  await $.command.run(command('finished'))
+  expect(await screen($)).toContain('✓ Explore · probe · done')
+})
+
 test('following the latest run again shows no run once none is left', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const w = world()
@@ -314,6 +338,19 @@ test('a timer resizes the pane only while it is on screen and never opens it', a
   await clock.advance(2000)
   expect(w.opens.length).toBe(2)
   expect(w.opens[1]).toEqual({ id: 'vision-view', title: 'Vision', columns: 64, rows: (w.opens[0]?.rows ?? 0) + 1 })
+})
+
+test('where no pane can be placed the view falls back to the status line and says why', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ canPlace: false })
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  const reply = await $.command.run(command(''))
+
+  expect(reply).toMatchObject({ text: expect.stringContaining('could not be placed (no-surface)') })
+  expect(w.closes).toBe(1)
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · waiting for you')
 })
 
 test('minimized, the status line names the task, the step and the work running', async ($, on) => {

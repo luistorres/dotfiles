@@ -17,7 +17,7 @@ export const jobStatus = (status: string): JobStatus => STATUS[status] ?? 'ended
 
 export const isLive = (job: Pick<Job, 'status'>): boolean => job.status === 'running' || job.status === 'waiting'
 
-export const agentJob = (agent: AgentRow, startedAt: number | undefined, endedAt: number | undefined): Job => ({
+const agentJob = (agent: AgentRow, startedAt: number | undefined, endedAt: number | undefined): Job => ({
   id: agent.id,
   label: agent.description === '' ? agent.type : `${agent.type} · ${agent.description}`,
   status: jobStatus(agent.status),
@@ -50,11 +50,11 @@ export const settle = (shells: readonly Shell[], notices: readonly Notice[], at:
     return notice === undefined ? shell : { ...shell, status: notice.status, endedAt: shell.endedAt ?? at }
   })
 
-// Only finished commands make room for new ones: a command still running stays listed however many start after it.
-export const keepShells = (shells: readonly Shell[], max: number): Shell[] => {
-  let excess = shells.length - max
-  return shells.filter(shell => {
-    if (excess <= 0 || isLive(shell)) return true
+// Only finished jobs make room for new ones: one still running stays listed however many start after it.
+export const keepJobs = <T extends Pick<Job, 'status'>>(jobs: readonly T[], max: number): T[] => {
+  let excess = jobs.length - max
+  return jobs.filter(job => {
+    if (excess <= 0 || isLive(job)) return true
     excess -= 1
     return false
   })
@@ -62,9 +62,15 @@ export const keepShells = (shells: readonly Shell[], max: number): Shell[] => {
 
 export type AgentTimes = { started: Record<string, number>; ended: Record<string, number>; resumed: string[] }
 
-// A subagent resumed with SendMessage comes back under the same id, so its clock restarts when it runs again.
-export const agentTimes = (agents: readonly AgentRow[], ended: Readonly<Record<string, number>>, at: number): AgentTimes => {
+// The agent list drops a subagent some time after it ends, and lists one that SendMessage resumes again under the same id.
+export const agentTimes = (
+  agents: readonly AgentRow[],
+  known: readonly Job[],
+  ended: Readonly<Record<string, number>>,
+  at: number,
+): AgentTimes => {
   const times: AgentTimes = { started: {}, ended: {}, resumed: [] }
+  const listed = new Set(agents.map(agent => agent.id))
   for (const agent of agents) {
     const live = isLive({ status: jobStatus(agent.status) })
     if (live && ended[agent.id] !== undefined) {
@@ -73,7 +79,25 @@ export const agentTimes = (agents: readonly AgentRow[], ended: Readonly<Record<s
     }
     if (!live && ended[agent.id] === undefined) times.ended[agent.id] = at
   }
+  for (const job of known) {
+    if (!listed.has(job.id) && isLive(job)) times.ended[job.id] = at
+  }
+
   return times
+}
+
+export const agentJobs = (
+  agents: readonly AgentRow[],
+  known: readonly Job[],
+  spawnedAt: Readonly<Record<string, number>>,
+  endedAt: Readonly<Record<string, number>>,
+): Job[] => {
+  const listed = new Set(agents.map(agent => agent.id))
+  const gone = known
+    .filter(job => !listed.has(job.id))
+    .map(job => (isLive(job) ? { ...job, status: 'ended' as const, endedAt: endedAt[job.id] ?? null } : job))
+
+  return [...gone, ...agents.map(agent => agentJob(agent, spawnedAt[agent.id], endedAt[agent.id]))]
 }
 
 // The end of each turn lists the background work still in flight; a command missing from it has ended, and its notice says how.

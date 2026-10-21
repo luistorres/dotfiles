@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Job, Run } from '../types'
-import { agentJob, agentTimes, backgroundTaskId, keepShells, noticesOf, reconcile, settle, shellLabel } from './jobs'
+import { agentJobs, agentTimes, backgroundTaskId, keepJobs, noticesOf, reconcile, settle, shellLabel } from './jobs'
 import { prStatusFrom } from './pr'
 import { parseRun, pick, type Candidate } from './run'
 import { paneLines, statusText, type Line, type Snapshot, type Tone } from './view'
@@ -16,7 +16,7 @@ const TICK_MS = 2000
 const STUCK_MS = 20_000
 const PR_STALE_MS = 60_000
 const MAX_ROWS = 40
-const SHELLS_KEPT = 40
+const JOBS_KEPT = 40
 const ASKS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 const VISION_SKILL = /(?:^|:)vision$/
 
@@ -96,14 +96,15 @@ const refreshRun = async ($: $) => {
 
 const refreshAgents = async ($: $, at: number) => {
   const agents = await $.agent.list()
-  const times = agentTimes(agents, await read($, endedAtAtom), at)
+  const known = await read($, agentsAtom)
+  const times = agentTimes(agents, known, await read($, endedAtAtom), at)
   const spawnedAt = await update($, spawnedAtAtom, map => ({ ...map, ...times.started }))
   const endedAt = await update($, endedAtAtom, map => ({
     ...Object.fromEntries(Object.entries(map).filter(([id]) => !times.resumed.includes(id))),
     ...times.ended,
   }))
 
-  await update($, agentsAtom, () => agents.map(agent => agentJob(agent, spawnedAt[agent.id], endedAt[agent.id])))
+  await update($, agentsAtom, () => keepJobs(agentJobs(agents, known, spawnedAt, endedAt), JOBS_KEPT))
 }
 
 const snapshot = async ($: $): Promise<Snapshot> => {
@@ -391,7 +392,7 @@ export const register: Register = on => {
         startedAt: at,
         endedAt: null,
       }
-      await update($, shellsAtom, shells => keepShells([...shells.filter(one => one.id !== taskId), shell], SHELLS_KEPT))
+      await update($, shellsAtom, shells => keepJobs([...shells.filter(one => one.id !== taskId), shell], JOBS_KEPT))
     }
 
     return ran

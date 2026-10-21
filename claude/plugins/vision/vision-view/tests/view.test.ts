@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Job } from '../types'
-import { agentTimes, backgroundTaskId, keepShells, noticesOf, reconcile, settle, shellLabel } from '../hooks/jobs'
+import { agentJobs, agentTimes, backgroundTaskId, keepJobs, noticesOf, reconcile, settle, shellLabel } from '../hooks/jobs'
 import { parseRun } from '../hooks/run'
 import { paneLines, safeHref, statusText, type Snapshot } from '../hooks/view'
 import { SINGLE, STACK_LATER, STACK_START } from './fixtures'
@@ -123,9 +123,9 @@ test('only finished commands make room for new ones', () => {
     { ...job('new', 'running', 3), toolUseId: 't3' },
   ]
 
-  expect(keepShells(shells, 2).map(shell => shell.id)).toEqual(['old', 'new'])
-  expect(keepShells(shells, 1).map(shell => shell.id)).toEqual(['old', 'new'])
-  expect(keepShells(shells, 5).length).toBe(3)
+  expect(keepJobs(shells, 2).map(shell => shell.id)).toEqual(['old', 'new'])
+  expect(keepJobs(shells, 1).map(shell => shell.id)).toEqual(['old', 'new'])
+  expect(keepJobs(shells, 5).length).toBe(3)
 })
 
 test('a subagent resumed under the same id starts its clock again', () => {
@@ -134,8 +134,21 @@ test('a subagent resumed under the same id starts its clock again', () => {
     { id: 'a2', description: 'Fix', type: 'general-purpose', status: 'completed' },
   ]
 
-  expect(agentTimes(agents, {}, 10)).toEqual({ started: {}, ended: { a2: 10 }, resumed: [] })
-  expect(agentTimes(agents, { a1: 5, a2: 5 }, 20)).toEqual({ started: { a1: 20 }, ended: {}, resumed: ['a1'] })
+  expect(agentTimes(agents, [], {}, 10)).toEqual({ started: {}, ended: { a2: 10 }, resumed: [] })
+  expect(agentTimes(agents, [], { a1: 5, a2: 5 }, 20)).toEqual({ started: { a1: 20 }, ended: {}, resumed: ['a1'] })
+})
+
+test('a subagent the engine stops listing stays on screen, ended if it was still running', () => {
+  const known = [job('gone-running', 'running', 0), job('gone-done', 'done', 0, 30), job('listed', 'running', 0)]
+  const agents = [{ id: 'listed', description: 'Fix', type: 'general-purpose', status: 'running' }]
+  const times = agentTimes(agents, known, { 'gone-done': 30 }, 50)
+
+  expect(times.ended).toEqual({ 'gone-running': 50 })
+  expect(agentJobs(agents, known, { listed: 0 }, { ...times.ended, 'gone-done': 30 })).toEqual([
+    { ...job('gone-running', 'ended', 0, 50) },
+    job('gone-done', 'done', 0, 30),
+    { id: 'listed', label: 'general-purpose · Fix', status: 'running', startedAt: 0, endedAt: null },
+  ])
 })
 
 test('a background command is labelled by its description, else its first line', () => {
