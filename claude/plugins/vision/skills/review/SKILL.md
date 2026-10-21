@@ -30,7 +30,9 @@ still gets its pass, because prose asserts things that go false silently.
 
 A written plan or PRD is reviewed once, before the owner approves it: fix what you agree with and let
 the approval be the gate. Re-reviewing a revised plan rarely converges, because prose always yields
-another finding.
+another finding. What is under review decides the column, not how it arrives: a plan, PRD or design
+that nothing has built yet gets plan review even when it comes as a pull request or a diff, while a
+change that also alters code, or a doc about code that exists, gets code review.
 
 The second opinion runs the same reviewer's brief on another vendor's model, which `second-opinion`
 reads from `VISION_SECOND_OPINION_MODEL`. The extra pass runs it on the inexpensive model in
