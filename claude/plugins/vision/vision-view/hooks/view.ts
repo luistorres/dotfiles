@@ -3,7 +3,7 @@ import { isLive } from './jobs'
 import { prBadge } from './pr'
 import { isFinished, position } from './run'
 
-export type Tone = 'run' | 'wait' | 'fail' | 'done' | 'dim' | 'plain' | 'now'
+export type Tone = 'run' | 'wait' | 'fail' | 'done' | 'dim' | 'plain'
 
 export type Part = { text: string; tone: Tone; isBold?: boolean }
 
@@ -65,8 +65,8 @@ const stepLine = (steps: readonly Check[], indent: string): Line => {
 
     return [
       ...(lead === '' ? [] : [{ text: lead, tone: 'plain' as const }]),
-      { text: step.label, tone: 'now', isBold: true },
-      { text: ' ▶', tone: 'now', isBold: true },
+      { text: step.label, tone: 'run', isBold: true },
+      { text: ' ▶', tone: 'run', isBold: true },
     ]
   })
 
@@ -142,7 +142,7 @@ const taskLines = (run: Run, prs: Snapshot['prs']): Line[] => {
 const JOB_TONE: Record<Job['status'], Tone> = {
   running: 'run',
   waiting: 'wait',
-  done: 'dim',
+  done: 'done',
   failed: 'fail',
   stopped: 'fail',
   ended: 'dim',
@@ -174,7 +174,7 @@ const tallyLine = (hidden: readonly Job[], isShowing: boolean): Line[] => {
 
   const failed = hidden.filter(job => job.status === 'failed' || job.status === 'stopped').length
   const text = `${hidden.length} ${isShowing ? 'earlier ' : ''}finished${failed > 0 ? `, ${failed} failed or stopped` : ''}`
-  return [line(isShowing ? text : `${text} · /vision-view finished shows them`, failed > 0 ? 'fail' : 'dim')]
+  return [line(isShowing ? text : `${text} · /vision-view finished shows them`, failed > 0 ? 'fail' : 'done')]
 }
 
 const jobLines = (snapshot: Snapshot): Line[] => {

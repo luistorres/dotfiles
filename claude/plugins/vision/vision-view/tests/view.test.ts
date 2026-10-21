@@ -41,19 +41,34 @@ test('a stack shows each task once, the current one with its steps, and the ship
   expect(text.filter(one => one.includes('Task 2')).length).toBe(1)
 })
 
-test('the current step of a strip is its own part, with its label and arrow in the now tone, bold', () => {
+test('the current step of a strip is its own part, with its label and arrow in progress, bold', () => {
   const strip = (data: Snapshot) => paneLines(data).find(line => line.text.includes('review ▶'))
   const parts = [
-    { text: 'review', tone: 'now', isBold: true },
-    { text: ' ▶', tone: 'now', isBold: true },
+    { text: 'review', tone: 'run', isBold: true },
+    { text: ' ▶', tone: 'run', isBold: true },
   ]
 
   for (const run of [STACK_LATER, SINGLE]) {
     const found = strip(snapshot({ run: parseRun('x', run) }))
     expect(found?.parts).toEqual(expect.arrayContaining(parts))
     expect(found?.parts?.map(part => part.text).join('')).toBe(found?.text)
-    expect(found?.parts?.filter(part => part.tone === 'now').length).toBe(2)
+    expect(found?.parts?.filter(part => part.tone === 'run').length).toBe(2)
   }
+})
+
+test('anything in progress is one tone, success another, failure a third', () => {
+  const jobs = [job('a', 'running', 0), job('b', 'done', 0, 1), job('c', 'failed', 0, 1), job('d', 'stopped', 0, 1)]
+  const lines = paneLines(snapshot({ jobs, isShowingFinished: true }))
+  const tone = (start: string) => lines.find(line => line.text.startsWith(start))?.tone
+
+  expect(tone('● job a')).toBe('run')
+  expect(tone('✓ job b')).toBe('done')
+  expect(tone('✗ job c')).toBe('fail')
+  expect(tone('✗ job d')).toBe('fail')
+  expect(tone('▶ Task 2')).toBe('run')
+  expect(tone('✓ Task 1')).toBe('done')
+  expect(tone('● working')).toBe('run')
+  expect(paneLines(snapshot({ jobs: [job('b', 'done', 0, 1)] })).find(line => line.text.includes('finished ·'))?.tone).toBe('done')
 })
 
 test('running work shows how long it has run, and finished work collapses into a count', () => {

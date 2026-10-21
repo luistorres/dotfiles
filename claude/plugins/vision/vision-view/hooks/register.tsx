@@ -304,13 +304,12 @@ const runCommand = async ($: $, args: string): Promise<string> => {
 const failure = (error: unknown) => `vision-view: ${oneLine(error instanceof Error ? error.message : String(error), 120)}`
 
 const TONE: Record<Tone, { color?: string; dimColor?: boolean }> = {
-  run: { color: 'green' },
+  run: { color: '#FF8700' },
   wait: { color: 'yellow' },
   fail: { color: 'red' },
-  done: { color: 'green', dimColor: true },
+  done: { color: 'green' },
   dim: { dimColor: true },
   plain: {},
-  now: { color: '#FF8700' },
 }
 
 const row = (ui: Ui, line: Line) => {

@@ -244,6 +244,30 @@ test('the pane follows a stack from the state file and the host, and its clocks 
   expect(await screen($)).toContain('✓ GPT second opinion on task 1 · done after 1m 2s')
 })
 
+test('in progress is drawn orange, success green and failure red', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ nextTaskId: 'bg8' })
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the tests', run_in_background: true })
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const color = async (text: RegExp) => (await ui.find({ type: 'Text', text }))?.props.color
+
+  expect(await color(/^● Run the tests/)).toBe('#FF8700')
+  expect(await color(/^✓ Task 1/)).toBe('green')
+  expect((await ui.find({ type: 'Text', text: /^✓ Task 1/ }))?.props.dimColor).not.toBe(true)
+  await ui.unmount()
+
+  await $.prompt.submit({ origin: { kind: 'task-notification' }, text: notice('bg8', 'failed'), wait: false })
+  await $.command.run(command('finished'))
+  await clock.advance(2000)
+  const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await after.find({ type: 'Text', text: /^✗ Run the tests/ }))?.props.color).toBe('red')
+  await after.unmount()
+})
+
 test('a slow gh, a failing read or a failing agent list never stops the clock or the refresh', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const w = world({ gh: 'slow', nextTaskId: 'bg2' })
