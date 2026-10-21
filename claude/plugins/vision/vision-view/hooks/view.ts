@@ -167,8 +167,9 @@ const jobLines = (snapshot: Snapshot): Line[] => {
   return [
     line('Running', 'plain', { isBold: true }),
     ...(live.length === 0 ? [line('nothing right now', 'dim')] : live.map(job => jobLine(job, snapshot.now))),
-    ...(shown.length === 0 ? [] : [line('Finished', 'plain', { isBold: true }), ...shown.map(job => jobLine(job, snapshot.now))]),
-    ...tally,
+    ...(shown.length === 0
+      ? tally
+      : [line('Finished', 'plain', { isBold: true }), ...tally, ...shown.map(job => jobLine(job, snapshot.now))]),
   ]
 }
 

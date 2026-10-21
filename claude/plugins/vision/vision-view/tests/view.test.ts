@@ -55,7 +55,8 @@ test('running work shows how long it has run, and finished work collapses into a
 test('finished jobs beyond the ones shown are counted as earlier ones, with their own failures', () => {
   const jobs = Array.from({ length: 10 }, (_, index) => job(`f${index}`, index === 0 ? 'failed' : 'done', 0, 1000))
 
-  expect(texts(snapshot({ jobs, isShowingFinished: true }))).toContain('2 earlier finished, 1 failed or stopped')
+  const shown = texts(snapshot({ jobs, isShowingFinished: true }))
+  expect(shown.indexOf('2 earlier finished, 1 failed or stopped')).toBe(shown.indexOf('Finished') + 1)
   expect(texts(snapshot({ jobs: jobs.slice(1), isShowingFinished: true }))).toContain('1 earlier finished')
   expect(texts(snapshot({ jobs }))).toContain('10 finished, 1 failed or stopped · h shows them')
 })

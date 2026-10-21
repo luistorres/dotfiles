@@ -52,15 +52,23 @@ const mainCheckout = async ($: $): Promise<string> => {
   const git = await $.process
     .run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeoutMs: 5000 })
     .catch(() => undefined)
-  if (git?.exitCode !== 0) return $.session.cwd()
+  if (git === undefined) return $.session.cwd()
 
-  const checkout = git.stdout.trim().replace(/\/\.git\/?$/, '')
+  const checkout = git.exitCode === 0 ? git.stdout.trim().replace(/\/\.git\/?$/, '') : await $.session.cwd()
   await update($, checkoutAtom, () => checkout)
   return checkout
 }
 
-const stateFiles = async ($: $, checkout: string) =>
-  (await $.fs.list(`${checkout}/${STATE_DIR}`)).filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
+// A listing that fails while the folder is still there is a hiccup, and the run on screen stays.
+const stateFiles = async ($: $, checkout: string) => {
+  const dir = `${checkout}/${STATE_DIR}`
+  const entries = await $.fs.list(dir).catch(async (error: unknown) => {
+    if (await $.fs.stat(dir).then(() => true, () => false)) throw error
+    return []
+  })
+
+  return entries.filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
+}
 
 const isCurrent = (at: number) => refreshingSince === at
 
@@ -153,6 +161,7 @@ const refresh = async ($: $, at: number) => {
       shownRun = undefined
     })
     await refreshAgents($, at).catch(() => undefined)
+    await refreshStatusLine($).catch(() => undefined)
   } finally {
     if (isCurrent(at)) refreshingSince = null
   }
@@ -162,11 +171,13 @@ const refreshNow = async ($: $) => {
   const at = await $.clock.now()
   await update($, nowAtom, () => at)
   await refresh($, at)
-  await refreshStatusLine($).catch(() => undefined)
 }
 
-// A hook waits on a refresh only briefly, so a read that never answers holds up no command.
-const refreshForCommand = ($: $) => Promise.race([refreshNow($).catch(() => undefined), $.clock.sleep(COMMAND_WAIT_MS)])
+// A command waits on files and git only briefly, so a read that never answers holds up no command.
+const within = <T,>($: $, work: Promise<T>, fallback: T): Promise<T> =>
+  Promise.race([work.catch(() => fallback), $.clock.sleep(COMMAND_WAIT_MS).then(() => fallback)])
+
+const refreshForCommand = ($: $) => within($, refreshNow($), undefined)
 
 const fetchPrs = async ($: $, at: number) => {
   isFetchingPrs = true
@@ -228,7 +239,7 @@ const openPane = async ($: $): Promise<string> => {
 const minimize = async ($: $) => {
   await update($, modeAtom, () => 'line')
   await $.ui.close({ id: PANE })
-  await refreshStatusLine($)
+  await refreshForCommand($)
 }
 
 const closeAll = async ($: $): Promise<string> => {
@@ -250,9 +261,14 @@ const attach = async ($: $, query: string): Promise<string> => {
     return 'Vision view follows the run edited last again.'
   }
 
-  const names = (await stateFiles($, await mainCheckout($)).catch(() => []))
-    .filter(entry => entry.name.includes(query))
-    .map(entry => `${STATE_DIR}/${entry.name}`)
+  const files = await within(
+    $,
+    mainCheckout($).then(checkout => stateFiles($, checkout)),
+    undefined,
+  )
+  if (files === undefined) return `Could not list ${STATE_DIR} just now; try again.`
+
+  const names = files.filter(entry => entry.name.includes(query)).map(entry => `${STATE_DIR}/${entry.name}`)
   if (names.length !== 1) {
     return names.length === 0
       ? `No state file in ${STATE_DIR} matches "${query}".`

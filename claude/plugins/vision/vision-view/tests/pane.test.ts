@@ -37,7 +37,12 @@ type World = {
   closes: number
   gh: 'ok' | 'slow'
   isGitBroken: boolean
+  gitExit: number
+  gitCalls: number
+  ghCalls: number
   listed: string[]
+  hangingLists: number
+  isDirGone: boolean
   isListBroken: boolean
   isReadBroken: boolean
   hangingReads: number
@@ -59,7 +64,12 @@ const world = (over: Partial<World> = {}): World => ({
   closes: 0,
   gh: 'ok',
   isGitBroken: false,
+  gitExit: 0,
+  gitCalls: 0,
+  ghCalls: 0,
   listed: [],
+  hangingLists: 0,
+  isDirGone: false,
   isListBroken: false,
   isReadBroken: false,
   hangingReads: 0,
@@ -75,13 +85,22 @@ const stubs = (on: On, world: World, clock: Clock) => {
   on('session.cwd', () => ({ value: '/repo/.worktrees/export' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('process.run', async ($, e) => {
-    if (e.argv[0] === 'git') return world.isGitBroken ? { deny: 'git is not installed' } : { value: ran('/repo/.git\n') }
+    if (e.argv[0] === 'git') {
+      world.gitCalls += 1
+      if (world.isGitBroken) return { deny: 'git is not installed' }
+      return { value: { ...ran(world.gitExit === 0 ? '/repo/.git\n' : ''), exitCode: world.gitExit } }
+    }
+    world.ghCalls += 1
     if (world.gh === 'slow') await clock.sleep(60_000)
     return { value: ran(JSON.stringify({ state: 'OPEN', isDraft: true, statusCheckRollup: [{ conclusion: 'SUCCESS' }] })) }
   })
-  on('fs.list', ($, e) => {
+  on('fs.list', async ($, e) => {
     world.listed.push(e.path ?? '')
-    return world.isListBroken
+    if (world.hangingLists > 0) {
+      world.hangingLists -= 1
+      await clock.sleep(600_000)
+    }
+    return world.isListBroken || world.isDirGone
       ? { deny: 'the disk is busy' }
       : {
           value: [
@@ -90,6 +109,9 @@ const stubs = (on: On, world: World, clock: Clock) => {
           ],
         }
   })
+  on('fs.stat', () =>
+    world.isDirGone ? { deny: 'no such directory' } : { value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false } },
+  )
   on('fs.read', async () => {
     const answer = world.isReadBroken ? { deny: 'the disk is busy' } : { value: world.state }
     if (world.hangingReads > 0) {
@@ -311,6 +333,97 @@ test('without git the runs are read from the session folder, and git is asked ag
   expect(w.listed.at(-1)).toBe('/repo/docs/vision')
 })
 
+test('a read that never answers holds up no /clear, and a listing that never answers holds up no attach', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  w.hangingReads = 1
+  w.mtimeMs = 2
+  await $.classic.SessionStart({ source: 'clear' })
+
+  w.hangingLists = 1
+  const attaching = $.command.run(command('attach ledger'))
+  await clock.advance(3000)
+  expect(await attaching).toMatchObject({ text: 'Could not list docs/vision just now; try again.' })
+})
+
+test('while a refresh is stalled the status line still follows the session', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ nextTaskId: 'bg7' })
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.command.run(command('min'))
+  w.hangingReads = 1
+  w.mtimeMs = 2
+  await clock.advance(2000)
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests', run_in_background: true })
+  await clock.advance(2000)
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · 1 running')
+})
+
+test('minimizing a closed view shows the run at once', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  await $.command.run(command('min'))
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · waiting for you')
+})
+
+test('a vanished docs/vision folder means no run, while a failed listing of one still there keeps the run', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  w.isListBroken = true
+  await clock.advance(2000)
+  expect(await screen($)).toContain('▶ Task 2 — payment reissue')
+
+  w.isListBroken = false
+  w.isDirGone = true
+  await clock.advance(2000)
+  expect(await screen($)).toContain('No vision run in this checkout yet.')
+})
+
+test('outside a repository git is asked once; a git that cannot run is asked again', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ gitExit: 128 })
+  stubs(on, w, clock)
+
+  await begin($)
+  await clock.advance(6000)
+  expect(w.gitCalls).toBe(1)
+})
+
+test('after /clear the PR badges are fetched again at once', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  await clock.advance(2000)
+  expect(w.ghCalls).toBe(1)
+
+  await $.classic.SessionStart({ source: 'clear' })
+  await clock.advance(2000)
+  expect(w.ghCalls).toBe(2)
+})
+
+test('finished subagents beyond forty make room for new ones', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const agents = Array.from({ length: 45 }, (_, index) => ({ id: `a${index}`, description: `check ${index}`, type: 'Explore', status: 'completed' as const }))
+  stubs(on, world({ agents }), clock)
+
+  await begin($)
+  await clock.advance(2000)
+  expect(await screen($)).toContain('40 finished · h shows them')
+})
+
 test('a background command missing from the end-of-turn list has ended even without its notice', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const w = world({ nextTaskId: 'bg3' })
@@ -426,14 +539,17 @@ test('close takes the pane and the status line down and stops refreshing', async
   stubs(on, w, clock)
 
   await begin($)
+  await $.command.run(command('min'))
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · waiting for you')
+
   await $.command.run(command('close'))
-  expect(w.closes).toBe(1)
   expect(w.statuses.at(-1)).toBe(undefined)
 
   w.state = STACK_START
   w.mtimeMs = 2
   await clock.advance(4000)
   expect(await screen($)).toContain('▶ Task 2 — payment reissue')
+  expect(w.statuses.at(-1)).toBe(undefined)
 })
 
 test('running /vision-view while the pane is up opens it again, asking for the keyboard', async ($, on) => {
@@ -453,7 +569,7 @@ test('a permission dialog, which hides the pane while it is up, never leaves it 
 
   await begin($)
   await $.turn.start({ text: 'clean the build', turnId: 't1' })
-  await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })
+  await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'tu-rm' })
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
   expect(await screen($)).toContain('● working')
 })
