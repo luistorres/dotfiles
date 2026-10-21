@@ -255,7 +255,8 @@ test('in progress is drawn orange, success green and failure red', async ($, on)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const color = async (text: RegExp) => (await ui.find({ type: 'Text', text }))?.props.color
 
-  expect(await color(/^● Run the tests/)).toBe('#FF8700')
+  expect(await color(/^●$/)).toBe('#FF8700')
+  expect(await color(/^ Run the tests · running 2s$/)).toBe(undefined)
   expect(await color(/^✓ Task 1/)).toBe('green')
   expect((await ui.find({ type: 'Text', text: /^✓ Task 1/ }))?.props.dimColor).not.toBe(true)
   await ui.unmount()

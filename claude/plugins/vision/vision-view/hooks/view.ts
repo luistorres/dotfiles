@@ -49,6 +49,17 @@ export const safeHref = (url: string): string | undefined => {
 
 const line = (text: string, tone: Tone = 'plain', extra: Partial<Line> = {}): Line => ({ text, tone, ...extra })
 
+const marked = (mark: string, tone: Tone, label: string, isBold: boolean): Line => {
+  const bold = isBold ? { isBold } : {}
+  return line(`${mark}${label}`, 'plain', {
+    ...bold,
+    parts: [
+      { text: mark, tone, ...bold },
+      { text: label, tone: 'plain', ...bold },
+    ],
+  })
+}
+
 const stepStrip = (steps: readonly Check[]): string => {
   const current = steps.find(step => !step.isDone)
   return steps.map(step => `${step.label} ${step.isDone ? '✓' : step === current ? '▶' : '·'}`).join('  ')
@@ -129,7 +140,9 @@ const taskLines = (run: Run, prs: Snapshot['prs']): Line[] => {
   return run.tasks.flatMap((task, index) => {
     const isCurrent = current?.index === index
     const mark = task.isDone ? '✓' : isCurrent ? '▶' : '·'
-    const head = line(`${mark} ${task.title}`, task.isDone ? 'done' : isCurrent ? 'plain' : 'dim', { isBold: isCurrent })
+    const head = isCurrent
+      ? marked(mark, 'run', ` ${task.title}`, true)
+      : line(`${mark} ${task.title}`, task.isDone ? 'done' : 'dim')
     if (run.shape === 'issues') return [head]
     if (isCurrent) {
       return [head, ...(task.steps.length === 0 ? [] : [stepLine(task.steps, '   ')]), ...criteriaLine(task, '   '), ...prLine(task, prs, '   ')]
@@ -166,7 +179,10 @@ const jobLine = (job: Job, now: number): Line => {
       ? `${job.status === 'ended' ? 'ended' : job.status} after ${elapsed(job.endedAt - job.startedAt)}`
       : job.status
 
-  return line(`${JOB_MARK[job.status]} ${oneLine(job.label, 44)} · ${time}`, JOB_TONE[job.status])
+  const label = ` ${oneLine(job.label, 44)} · ${time}`
+  return isLive(job)
+    ? { ...marked(JOB_MARK[job.status], JOB_TONE[job.status], label, false), tone: JOB_TONE[job.status] }
+    : line(`${JOB_MARK[job.status]}${label}`, JOB_TONE[job.status])
 }
 
 const tallyLine = (hidden: readonly Job[], isShowing: boolean): Line[] => {

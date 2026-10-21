@@ -71,6 +71,22 @@ test('anything in progress is one tone, success another, failure a third', () =>
   expect(paneLines(snapshot({ jobs: [job('b', 'done', 0, 1)] })).find(line => line.text.includes('finished ·'))?.tone).toBe('done')
 })
 
+test('the mark in front of the current task and of live work carries its state, the label stays plain', () => {
+  const lines = paneLines(snapshot({ jobs: [job('a', 'running', 40_000), job('w', 'waiting', 40_000), job('b', 'done', 0, 1)] }))
+  const parts = (start: string) => lines.find(line => line.text.startsWith(start))?.parts
+
+  expect(parts('▶ Task 2')).toEqual([
+    { text: '▶', tone: 'run', isBold: true },
+    { text: ' Task 2 — payment reissue', tone: 'plain', isBold: true },
+  ])
+  expect(parts('● job a')).toEqual([
+    { text: '●', tone: 'run' },
+    { text: ' job a · running 1m 0s', tone: 'plain' },
+  ])
+  expect(parts('● job w')?.[0]).toEqual({ text: '●', tone: 'wait' })
+  expect(parts('✓ Task 1')).toBe(undefined)
+})
+
 test('running work shows how long it has run, and finished work collapses into a count', () => {
   const jobs = [job('a', 'running', 40_000), job('b', 'done', 10_000, 20_000), job('c', 'failed', 10_000, 30_000)]
 
