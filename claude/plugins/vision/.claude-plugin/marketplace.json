@@ -25,8 +25,8 @@
     },
     {
       "name": "vision-view",
-      "description": "A /vision-view pane: the active vision run as a tree of steps, with the agents and second-opinion reviewers working under each step.",
-      "version": "0.3.0",
+      "description": "A /vision-view pane for the active vision run: its tasks and steps from the state file, the subagents and background commands running now, and its pull requests.",
+      "version": "0.4.0",
       "author": {
         "name": "Luis Torres"
       },

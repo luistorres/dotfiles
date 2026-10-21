@@ -553,6 +553,11 @@ test_vision_watch_retries_a_failed_review_twice_per_head() {
     watch "$d" record 'o/api#5' clean h2 && check [ "$(watched "$d" 'o/api#5' errors)" = null ]
 }
 
+test_vision_view_mod_tests_pass() {
+  "$REAL_CLAUDE" plugin test "$REPO/claude/plugins/vision/vision-view" > "$TMP_ROOT/view.log" 2>&1 ||
+    { tail -20 "$TMP_ROOT/view.log"; return 1; }
+}
+
 gate_repo() {
   local d
   d=$(mktemp -d "$TMP_ROOT/gate.XXXXXX") &&

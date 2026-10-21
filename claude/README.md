@@ -47,7 +47,7 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 - **`bin/pr-watch`** finds the pull requests awaiting your review and applies the watcher's rules (new heads only, at most two automatic reviews, no drafts) against a state file, so those rules are code with tests rather than sentences in a prompt.
 - **`hooks/pr-gate`** blocks `gh pr create` while the run's state file shows its review, fix or verify step unticked. A rule that must always hold is a hook, not a sentence in a prompt.
 
-Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run. On a machine that ran the older `flow` plugins, the template disables them, and the installer removes skill links that point at skills no longer in this folder.
+Run state lives in `docs/vision/` of the repository being worked on. `/vision-view` shows the active run in a pane, or `/vision-view min` in one status line. Progress comes only from the state file. The running work comes only from Claude Code's own records: its subagent list, and the task id a background command reports at launch. A command counts as finished from its completion notice, or from the end-of-turn list of work still in flight, so the pane never guesses from command text or process lists. On a machine that ran the older `flow` plugins, the template disables them, and the installer removes skill links that point at skills no longer in this folder.
 
 ## Leak guard
 

@@ -1,91 +1,67 @@
-export type Step = { label: string; isDone: boolean }
+export type Check = { label: string; isDone: boolean }
 
-export type TaskDetail = { label: string; substeps: Step[]; fields: string[]; criteria: Step[] }
-
-export type Workflow = {
-  kind: 'stack' | 'single'
+export type Task = {
   title: string
+  isDone: boolean
+  steps: Check[]
+  criteria: Check[]
+  pr: string | null
+  branch: string
+}
+
+export type Shape = 'single' | 'stack' | 'issues'
+
+export type Run = {
   path: string
-  headline: string
-  isActive: boolean
-  steps: Step[]
-  substeps: Step[]
-  criteria: Step[]
-  approach: string[]
-  intro: string[]
-  files: string[]
-  prUrl: string | null
-  absPath: string
-  tasks: TaskDetail[]
-  log: string[]
-  updatedAt: number
-}
-
-export type AgentNode = {
-  id: string
-  description: string
-  type: string
+  title: string
   status: string
-  parentId?: string
+  shape: Shape
+  risk: string
+  isAutonomous: boolean
+  tasks: Task[]
+  log: string[]
 }
 
-export type ReviewerKind = 'second-opinion'
+export type JobStatus = 'running' | 'waiting' | 'done' | 'failed' | 'stopped' | 'ended'
 
-export type Reviewer = {
+export type Job = {
   id: string
-  kind: ReviewerKind
   label: string
-  parentId?: string
-  logPath?: string
-  logToken?: string
-  startedAt: number
-  endedAt?: number
-  hasFailed?: boolean
-  logBytes: number
-  grewAt: number
+  status: JobStatus
+  startedAt: number | null
+  endedAt: number | null
 }
 
-export type Mode = 'closed' | 'pane' | 'line'
-
-export type LastSkill = { name: string; at: number }
+export type Shell = Job & { toolUseId: string }
 
 export type PrStatus = {
-  number: number
-  url: string
   state: string
   isDraft: boolean
-  reviewDecision: string
   passed: number
   failed: number
   pending: number
   fetchedAt: number
 }
 
-export type Activity = { tool: string; gist: string; at: number }
+export type Mode = 'closed' | 'pane' | 'line'
 
 declare module 'claude-code' {
   interface PluginState {
     'vision-view': {
       mode: Mode
-      workflow: Workflow | null
-      agents: AgentNode[]
+      checkout: string | null
+      pinned: string | null
+      run: Run | null
+      otherRuns: number
+      shells: Shell[]
+      agents: Job[]
       spawnedAt: Record<string, number>
-      stepOf: Record<string, string>
-      ownedPaths: string[]
-      inFlight: Record<string, string>
+      endedAt: Record<string, number>
+      prs: Record<string, PrStatus>
       asking: string[]
       isMainIdle: boolean
-      mainActivity: Activity | null
-      prStatus: PrStatus | null
-      reviewers: Reviewer[]
-      lastSkill: LastSkill | null
-      reviewLoopAt: number | null
-      wakeAt: number | null
-      prUrl: string | null
-      expanded: string[]
-      details: Record<string, string[]>
-      hideFinished: boolean
-      opened: string | null
+      isShowingFinished: boolean
+      sessionStartedAt: number
       now: number
     }
   }
