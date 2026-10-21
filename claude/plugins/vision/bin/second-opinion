@@ -1,0 +1,62 @@
+#!/bin/bash
+set -euo pipefail
+
+model=${VISION_SECOND_OPINION_MODEL:-}
+if [ "${1:-}" = --model ]; then
+  model=${2:-}
+  shift 2 || true
+fi
+if [ $# -ne 3 ]; then
+  echo "usage: second-opinion [--model <model>] <agent> <inputs-file> <repository>" >&2
+  exit 2
+fi
+
+here=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+agent_file="$here/../agents/$1.md"
+inputs=$2
+repo=$3
+
+[ -n "$model" ] || { echo "Error: no model: pass --model or set VISION_SECOND_OPINION_MODEL" >&2; exit 3; }
+[ -f "$agent_file" ] || { echo "Error: no agent named $1" >&2; exit 2; }
+[ -f "$inputs" ] || { echo "Error: no inputs file at $inputs" >&2; exit 2; }
+[ -d "$repo" ] || { echo "Error: no repository at $repo" >&2; exit 2; }
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next } !front' "$agent_file" > "$work/brief.md"
+effort=$(awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { exit } front && $1 == "effort:" { print $2 }' "$agent_file")
+
+# The repository may be someone else's PR, so nothing from it or from the user's settings is loaded:
+# its settings could redirect credentials or run commands, and the user's allow rules reach every file.
+# With no settings sources, reads are limited to the repository and the inputs directory.
+rc=0
+(cd "$repo" && claude -p \
+  --model "$model" \
+  ${effort:+--effort "$effort"} \
+  --setting-sources= \
+  --tools Read,Grep,Glob \
+  --permission-mode dontAsk \
+  --strict-mcp-config \
+  --settings '{"disableAllHooks":true,"permissions":{"deny":["Read(**/.env)","Read(**/.env.*)","Read(**/.envrc)","Read(**/*.pem)","Read(**/*.key)","Read(**/credentials.json)"]}}' \
+  --append-system-prompt-file "$work/brief.md" \
+  --add-dir "$(dirname "$inputs")" \
+  --max-turns "${VISION_SECOND_OPINION_MAX_TURNS:-80}" \
+  --no-session-persistence \
+  --output-format json < "$inputs" > "$work/out.json") || rc=$?
+
+field() { jq -r "$1" "$work/out.json" 2> /dev/null || true; }
+result=$(field '.result // ""')
+problem=""
+if [ "$rc" -ne 0 ] || [ "$(field '.is_error // false')" != false ]; then
+  problem="the review session failed (exit $rc, $(field '.subtype // "no result"'))"
+else
+  for line in 'crit=[0-9]' '^#### Critical' '^#### Important' '^#### Minor'; do
+    grep -q "$line" <<< "$result" || problem="the review has no crit= line or is missing a severity heading"
+  done
+fi
+
+printf '%s\n' "$result"
+[ -z "$problem" ] || echo "Error: $problem" >&2
+jq -r --arg model "$model" '"second-opinion: model=\($model) turns=\(.num_turns // "?") input=\(.usage.input_tokens // 0) cache_read=\(.usage.cache_read_input_tokens // 0) cache_write=\(.usage.cache_creation_input_tokens // 0) output=\(.usage.output_tokens // 0)"' "$work/out.json" >&2 2> /dev/null ||
+  echo "second-opinion: model=$model, no usage reported" >&2
+[ -z "$problem" ]

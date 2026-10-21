@@ -1,0 +1,14 @@
+{
+  "name": "vision",
+  "description": "Ship coding work end-to-end, from a one-line fix to a stack of PRs or a set of issues, with resumable state and adversarial review sized to the risk.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Luis Torres"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "review",
+    "orchestration"
+  ]
+}

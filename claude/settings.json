@@ -1,6 +1,5 @@
 {
   "model": "opus",
-  "advisorModel": "fable",
   "effortLevel": "high",
   "modelSettings": {
     "claude-fable-5": {
@@ -20,6 +19,7 @@
     }
   },
   "outputStyle": "Concise",
+  "promptCacheTtl": "1h",
   "alwaysThinkingEnabled": true,
   "autoCompactEnabled": true,
   "autoUpdatesChannel": "latest",
@@ -72,8 +72,6 @@
   },
   "skillOverrides": {
     "pr-jira": "off",
-    "mistral-review": "off",
-    "opencode-review": "off",
     "stacked-prs": "off",
     "visual-debrief": "off",
     "request-feedback-artifact": "off"
@@ -94,15 +92,6 @@
             "if": "Bash(git commit*)"
           }
         ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "rtk hook claude"
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -118,14 +107,16 @@
     ]
   },
   "enabledPlugins": {
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": true,
     "mattpocock-skills@claude-plugins-official": true,
     "impeccable@impeccable": true,
     "warp@claude-code-warp": true,
     "ponytail@ponytail": true,
-    "flow@flow-local": true,
-    "flow-view@flow-local": true,
+    "flow@flow-local": false,
+    "flow-view@flow-local": false,
+    "vision@vision-local": true,
+    "vision-view@vision-local": true,
     "agent-atlas@agent-atlas-local": true
   },
   "extraKnownMarketplaces": {

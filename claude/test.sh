@@ -154,10 +154,10 @@ test_merge_is_idempotent() {
 REAL_HOME=$HOME
 REAL_CLAUDE=$(command -v claude)
 export REAL_CLAUDE
-LINKED_PATHS="hooks/comment-lint.py commands/code-review.md skills/codex-review skills/cursor-review skills/lean-flow skills/mistral-review skills/opencode-review skills/pr-create skills/pr-jira skills/pr-message skills/pr-review-watch skills/request-feedback-artifact skills/stacked-prs skills/visual-debrief"
-LOCAL_PLUGINS="flow@flow-local flow-view@flow-local agent-atlas@agent-atlas-local"
+LINKED_PATHS="hooks/comment-lint.py commands/code-review.md skills/pr-create skills/pr-jira skills/pr-message skills/request-feedback-artifact skills/stacked-prs skills/visual-debrief"
+LOCAL_PLUGINS="vision@vision-local vision-view@vision-local agent-atlas@agent-atlas-local"
 REMOTE_MARKETPLACES="anthropics/claude-plugins-official pbakaus/impeccable warpdotdev/claude-code-warp DietrichGebert/ponytail"
-REMOTE_PLUGINS="superpowers@claude-plugins-official frontend-design@claude-plugins-official mattpocock-skills@claude-plugins-official impeccable@impeccable warp@claude-code-warp ponytail@ponytail"
+REMOTE_PLUGINS="frontend-design@claude-plugins-official mattpocock-skills@claude-plugins-official impeccable@impeccable warp@claude-code-warp ponytail@ponytail"
 
 check() { "$@" || { echo "check failed: $*"; return 1; }; }
 
@@ -186,7 +186,7 @@ EOF
 if [ "$1 $2 $3" = "plugin marketplace add" ]; then
   case "$4" in /*) ;; *) [ -z "${FAIL_REMOTE:-}" ] || exit 1; echo "marketplace add $4" >> "$HOME/remote-calls"; exit 0 ;; esac
 elif [ "$1 $2" = "plugin install" ]; then
-  case "$3" in *@flow-local | *@agent-atlas-local) ;; *) [ -z "${FAIL_REMOTE:-}" ] || exit 1; echo "install $3" >> "$HOME/remote-calls"; exit 0 ;; esac
+  case "$3" in *@vision-local | *@agent-atlas-local) ;; *) [ -z "${FAIL_REMOTE:-}" ] || exit 1; echo "install $3" >> "$HOME/remote-calls"; exit 0 ;; esac
 fi
 exec "$REAL_CLAUDE" "$@"
 EOF
@@ -208,20 +208,17 @@ links_point_at_repo() {
 }
 
 copies_match_repo() {
-  local f
-  for f in CLAUDE.md RTK.md; do
-    [ -f "$1/.claude/$f" ] && [ ! -L "$1/.claude/$f" ] && cmp -s "$1/.claude/$f" "$REPO/claude/$f" ||
-      { echo "not a copy of the repo file: $f"; return 1; }
-  done
+  [ -f "$1/.claude/CLAUDE.md" ] && [ ! -L "$1/.claude/CLAUDE.md" ] && cmp -s "$1/.claude/CLAUDE.md" "$REPO/claude/CLAUDE.md" ||
+    { echo "not a copy of the repo file: CLAUDE.md"; return 1; }
 }
 
 settings_match_template() {
-  jq -e --slurpfile t "$TEMPLATE" --arg flow "$REPO/claude/plugins/flow" '
+  jq -e --slurpfile t "$TEMPLATE" --arg vision "$REPO/claude/plugins/vision" '
     .model == $t[0].model
     and .hooks.PreToolUse == $t[0].hooks.PreToolUse
     and .hooks.PostToolUse == $t[0].hooks.PostToolUse
-    and .extraKnownMarketplaces["flow-local"].source.path == $flow' "$1/.claude/settings.json" > /dev/null ||
-    { echo "settings do not match the template:"; jq -c '{model, hooks, flow: .extraKnownMarketplaces["flow-local"]}' "$1/.claude/settings.json"; return 1; }
+    and .extraKnownMarketplaces["vision-local"].source.path == $vision' "$1/.claude/settings.json" > /dev/null ||
+    { echo "settings do not match the template:"; jq -c '{model, hooks, vision: .extraKnownMarketplaces["vision-local"]}' "$1/.claude/settings.json"; return 1; }
 }
 
 plugin_list() { in_home "$1" claude plugin list --json | jq -c '[.[] | {id, version, enabled}] | sort_by(.id)'; }
@@ -250,7 +247,8 @@ first_run_backups() {
 }
 
 skills_hold_only_links() {
-  [ "$(ls -A "$1/.claude/skills" | wc -l | tr -d ' ')" = 12 ] || { echo "extra entries in skills/:"; ls -A "$1/.claude/skills"; return 1; }
+  [ "$(ls -A "$1/.claude/skills" | wc -l | tr -d ' ')" = "$(tr ' ' '\n' <<< "$LINKED_PATHS" | grep -c '^skills/')" ] ||
+    { echo "extra entries in skills/:"; ls -A "$1/.claude/skills"; return 1; }
 }
 
 backed_up() { (cd "$1/.claude/dotfiles-backups" && find . -mindepth 2 -maxdepth 2 | sed 's|^\./[^/]*/||' | LC_ALL=C sort | xargs); }
@@ -262,6 +260,7 @@ test_install() {
   before=$(real_snapshot) && h=$(scratch_home) &&
     mkdir -p "$h/.claude/skills/pr-create" "$h/.claude/commands" &&
     echo old > "$h/.claude/skills/pr-create/SKILL.md" &&
+    ln -s "$REPO/claude/skills/retired-skill" "$h/.claude/skills/retired-skill" &&
     ln -s "$h/missing/code-review.md" "$h/.claude/commands/code-review.md" || { echo "setup failed"; return 1; }
 
   {
@@ -296,7 +295,7 @@ test_install_finishes_after_remote_failures() {
   {
     check [ "$rc" -ne 0 ] && settings_match_template "$h" && local_plugins_enabled "$h" && links_point_at_repo "$h" &&
       check grep -q impeccable <<< "$(sed -n '/^Warnings:/,$p' "$h/run.log")" &&
-      check grep -q superpowers@claude-plugins-official <<< "$(sed -n '/^Warnings:/,$p' "$h/run.log")" &&
+      check grep -q frontend-design@claude-plugins-official <<< "$(sed -n '/^Warnings:/,$p' "$h/run.log")" &&
       check grep -q 'gh auth login' "$h/run.log" && check [ "$(real_snapshot)" = "$before" ]
   } || { tail -n 30 "$h/run.log"; return 1; }
 }
@@ -317,6 +316,327 @@ test_install_mcp_unauthenticated() {
     check grep -q 'gh auth login' "$h/mcp.log" &&
     check fails in_home "$h" claude mcp get github_inline_comment &&
     check [ "$(real_snapshot)" = "$before" ] || { cat "$h/mcp.log" 2> /dev/null; return 1; }
+}
+
+VISION="$REPO/claude/plugins/vision"
+REVIEW=$'crit=0 imp=1 minor=0\n#### Critical\n#### Important\n- a.ts:3 drops the cap\n#### Minor'
+
+# The stub claude keeps second-opinion offline: it records its arguments, stdin, working directory
+# and system prompt file, then prints the canned answer.json.
+opinion_dir() {
+  local d
+  d=$(mktemp -d "$TMP_ROOT/opinion.XXXXXX") && mkdir "$d/bin" "$d/run" "$d/repo" || return 1
+  cat > "$d/bin/claude" << 'EOF'
+#!/bin/bash
+printf '%s\n' "$@" > "$STUB_DIR/args"
+prev=""
+for arg in "$@"; do
+  [ "$prev" = --append-system-prompt-file ] && cp "$arg" "$STUB_DIR/brief"
+  prev=$arg
+done
+cat > "$STUB_DIR/stdin"
+pwd > "$STUB_DIR/cwd"
+cat "$STUB_DIR/answer.json" 2> /dev/null
+exit "${STUB_EXIT:-0}"
+EOF
+  chmod +x "$d/bin/claude" && printf 'Repository: x\nDiff: y\n' > "$d/run/inputs.md" && echo "$d"
+}
+
+answer() {
+  jq -n --arg result "$2" --argjson error "${3:-false}" '{type: "result", subtype: "success", is_error: $error,
+    num_turns: 7, result: $result,
+    usage: {input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 30, output_tokens: 40}}' > "$1/answer.json"
+}
+
+second_opinion() {
+  local d=$1
+  shift
+  STUB_DIR=$d PATH="$d/bin:$PATH" VISION_SECOND_OPINION_MODEL=other-model "$VISION/bin/second-opinion" "$@"
+}
+
+fails_with() {
+  local out
+  out=$("${@:2}" 2>&1) && { echo "succeeded: ${*:2}"; return 1; }
+  grep -qF -- "$1" <<< "$out" || { echo "expected \"$1\" in:"; echo "$out"; return 1; }
+}
+
+flag_value() { awk -v flag="$2" 'prev == flag { print; exit } { prev = $0 }' "$1/args"; }
+
+test_vision_second_opinion_runs_read_only_with_the_brief() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo" > "$d/out" 2> "$d/err" &&
+    check grep -qF -- '- a.ts:3 drops the cap' "$d/out" &&
+    check [ "$(flag_value "$d" --model)" = other-model ] &&
+    check [ "$(flag_value "$d" --tools)" = Read,Grep,Glob ] &&
+    check [ "$(flag_value "$d" --permission-mode)" = dontAsk ] &&
+    check jq -e '.disableAllHooks and (.permissions.deny | index("Read(**/.env)") and index("Read(**/*.pem)"))' <<< "$(flag_value "$d" --settings)" > /dev/null &&
+    check [ "$(flag_value "$d" --output-format)" = json ] &&
+    check [ "$(flag_value "$d" --add-dir)" = "$d/run" ] &&
+    check grep -qx -- -p "$d/args" && check grep -qx -- --strict-mcp-config "$d/args" &&
+    check grep -qx -- --setting-sources= "$d/args" &&
+    check grep -qx -- --no-session-persistence "$d/args" &&
+    check cmp -s "$d/stdin" "$d/run/inputs.md" && check [ "$(cat "$d/cwd")" = "$d/repo" ] &&
+    check grep -q '^You review one change' "$d/brief" && check fails grep -q '^name: code-reviewer' "$d/brief" &&
+    check [ "$(tail -n 1 "$d/err")" = 'second-opinion: model=other-model turns=7 input=10 cache_read=20 cache_write=30 output=40' ]
+}
+
+test_vision_second_opinion_fails_on_an_error_result() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" true &&
+    fails_with 'Error: the review session failed' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
+}
+
+test_vision_second_opinion_fails_without_severity_headings() {
+  local d
+  d=$(opinion_dir) && answer "$d" "Looks fine to me." &&
+    fails_with 'no crit= line' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
+}
+
+test_vision_second_opinion_accepts_a_formatted_count_line() {
+  local d
+  d=$(opinion_dir) && answer "$d" $'`crit=0 imp=1 minor=0`\n#### Critical\n#### Important\n- a.ts:3 x\n#### Minor' &&
+    second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1
+}
+
+test_vision_second_opinion_fails_when_a_heading_is_missing() {
+  local d
+  d=$(opinion_dir) && answer "$d" $'crit=0 imp=0 minor=0\n#### Critical\n#### Important' &&
+    fails_with 'missing a severity heading' second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
+}
+
+test_vision_second_opinion_fails_when_claude_exits_non_zero() {
+  local d
+  d=$(opinion_dir) && export STUB_EXIT=1 && check fails second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo"
+}
+
+test_vision_second_opinion_takes_a_model_flag() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    STUB_DIR=$d PATH="$d/bin:$PATH" env -u VISION_SECOND_OPINION_MODEL \
+      "$VISION/bin/second-opinion" --model cheap-model code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check [ "$(flag_value "$d" --model)" = cheap-model ]
+}
+
+test_vision_second_opinion_runs_the_plan_reviewer_brief() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    second_opinion "$d" plan-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check grep -q '^You are reviewing a plan' "$d/brief" && check fails grep -q '^name: plan-reviewer' "$d/brief"
+}
+
+test_vision_second_opinion_needs_a_model() {
+  local d rc=0
+  d=$(opinion_dir) && answer "$d" "$REVIEW" || return 1
+  STUB_DIR=$d PATH="$d/bin:$PATH" env -u VISION_SECOND_OPINION_MODEL \
+    "$VISION/bin/second-opinion" code-reviewer "$d/run/inputs.md" "$d/repo" 2> /dev/null || rc=$?
+  check [ "$rc" -eq 3 ] && check [ ! -e "$d/args" ]
+}
+
+test_vision_second_opinion_runs_at_the_agent_effort() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check [ "$(flag_value "$d" --effort)" = high ]
+}
+
+# The stub gh answers from fixture files: search.json, view-<number>.json and reviews-<number>.json.
+watch_dir() {
+  local d
+  d=$(mktemp -d "$TMP_ROOT/watch.XXXXXX") && mkdir "$d/bin" "$d/projects" || return 1
+  cat > "$d/bin/gh" << 'EOF'
+#!/bin/bash
+expr() { local prev=""; for a in "$@"; do [ "$prev" = --jq ] && { printf '%s' "$a"; return; }; prev=$a; done; }
+case "$1 $2" in
+  "api user") echo me ;;
+  "search prs") printf '%s\n' "$@" > "$STUB_DIR/search-args" && jq -r "$(expr "$@")" "$STUB_DIR/search.json" ;;
+  "pr view") cat "$STUB_DIR/view-$3.json" ;;
+  api\ repos/*/reviews) n=${2%/reviews} && jq -r "$(expr "$@")" "$STUB_DIR/reviews-${n##*/}.json" 2> /dev/null || true ;;
+  *) echo "unexpected: gh $*" >&2 && exit 1 ;;
+esac
+EOF
+  chmod +x "$d/bin/gh" && echo '[]' > "$d/search.json" && echo "$d"
+}
+
+requested() {
+  jq --arg r "$2" --argjson n "$3" --arg author "${5:-someone}" --argjson draft "${6:-false}" \
+    'map(select(.number != $n)) + [{repository: {nameWithOwner: $r}, number: $n, isDraft: $draft, author: {login: $author}}]' \
+    "$1/search.json" > "$1/search.new" && mv "$1/search.new" "$1/search.json" &&
+    jq -n --arg head "$4" '{headRefOid: $head, baseRefOid: "b0", baseRefName: "main", title: "T", url: "u"}' > "$1/view-$3.json"
+}
+
+clone_of() { git init -q "$1/projects/$2" && git -C "$1/projects/$2" remote add origin "$3"; }
+
+watch() {
+  local d=$1
+  shift
+  STUB_DIR=$d PATH="$d/bin:$PATH" VISION_PR_WATCH_STATE="$d/state.json" VISION_CLONE_ROOTS="$d/projects" \
+    "$VISION/bin/pr-watch" "$@"
+}
+
+watched() { jq -r --arg k "$2" ".[\$k].$3" "$1/state.json"; }
+
+test_vision_watch_lists_new_requests_with_their_clones() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h5 && requested "$d" o/svc 6 h6 &&
+    requested "$d" o/api 7 h7 me && requested "$d" o/api 8 h8 someone true &&
+    clone_of "$d" app git@github.com-work:O/Api.git && mkdir "$d/projects/team" &&
+    clone_of "$d" team/svc https://github.com/o/svc &&
+    VISION_CLONE_ROOTS="::$d/projects" watch "$d" scan > "$d/out" 2> /dev/null &&
+    check grep -qx 'user-review-requested:@me' "$d/search-args" && check fails grep -q -- '--review-requested' "$d/search-args" &&
+    check [ "$(wc -l < "$d/out")" -eq 2 ] &&
+    check jq -e --arg c "$d/projects/app" 'select(.number == 5) | .key == "o/api#5" and .head == "h5" and .base == "b0"
+      and .clone == $c' "$d/out" > /dev/null &&
+    check jq -e --arg c "$d/projects/team/svc" 'select(.number == 6) | .clone == $c' "$d/out" > /dev/null
+}
+
+test_vision_watch_skips_a_head_it_already_reviewed() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' clean h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    requested "$d" o/api 5 h2 && watch "$d" scan > "$d/out" 2> /dev/null && check grep -q '"head":"h2"' "$d/out"
+}
+
+test_vision_watch_skips_a_head_the_owner_reviewed() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    echo '[{"user": {"login": "other"}, "commit_id": "h1"}, {"user": {"login": "me"}, "commit_id": "h0"}]' > "$d/reviews-5.json" &&
+    watch "$d" scan --dry-run > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    echo '[{"user": {"login": "me"}, "commit_id": "h1"}]' > "$d/reviews-5.json" &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = already_reviewed ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check [ -s "$d/out" ]
+}
+
+test_vision_watch_caps_automatic_reviews() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h3 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' posted h1 https://x/r1 && watch "$d" record 'o/api#5' clean h2 &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = capped ] && check [ "$(watched "$d" 'o/api#5' head_sha)" = h3 ] &&
+    check [ "$(watched "$d" 'o/api#5' review_count)" -eq 2 ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check grep -q '"head":"h3"' "$d/out"
+}
+
+test_vision_watch_retries_a_request_once_it_is_cloned() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = skipped_not_cloned ] &&
+    clone_of "$d" api git@github.com:o/api.git && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ]
+}
+
+test_vision_watch_seeds_and_dry_runs_without_reviewing() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && requested "$d" o/svc 6 h6 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" scan --dry-run > "$d/out" 2> /dev/null && check [ -s "$d/out" ] && check [ ! -e "$d/state.json" ] &&
+    watch "$d" scan --seed > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = seeded ] &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ]
+}
+
+test_vision_watch_counts_only_completed_reviews() {
+  local d
+  d=$(watch_dir) && watch "$d" record 'o/api#5' error h1 && check [ "$(watched "$d" 'o/api#5' review_count)" = null ] &&
+    watch "$d" record 'o/api#5' posted h1 https://x/r1 && check [ "$(watched "$d" 'o/api#5' review_count)" -eq 1 ] &&
+    check [ "$(watched "$d" 'o/api#5' review_url)" = https://x/r1 ] &&
+    check fails watch "$d" record 'o/api#5' capped h1
+}
+
+test_vision_watch_retries_a_failed_review_twice_per_head() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' error h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    watch "$d" record 'o/api#5' error h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    requested "$d" o/api 5 h2 && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    watch "$d" record 'o/api#5' error h2 && check [ "$(watched "$d" 'o/api#5' errors)" -eq 1 ] &&
+    watch "$d" record 'o/api#5' clean h2 && check [ "$(watched "$d" 'o/api#5' errors)" = null ]
+}
+
+test_vision_view_mod_validates_and_its_tests_pass() {
+  local mod="$REPO/claude/plugins/vision/vision-view"
+  { "$REAL_CLAUDE" plugin validate --strict "$mod" && "$REAL_CLAUDE" plugin test "$mod"; } > "$TMP_ROOT/view.log" 2>&1 ||
+    { tail -20 "$TMP_ROOT/view.log"; return 1; }
+}
+
+gate_repo() {
+  local d
+  d=$(mktemp -d "$TMP_ROOT/gate.XXXXXX") &&
+    git -C "$d" init -q -b main && git -C "$d" config user.email test@example.com &&
+    git -C "$d" config user.name test && git -C "$d" -c core.hooksPath=/dev/null commit -q --allow-empty -m seed &&
+    mkdir -p "$d/docs/vision" && echo "$d"
+}
+
+gate() { jq -n --arg command "$2" --arg cwd "$1" '{tool_input: {command: $command}, cwd: $cwd}' | "$VISION/hooks/pr-gate"; }
+
+single_state() {
+  printf -- '---\nStatus: %s\nShape: single\nBranch: %s\n---\n# X\n\n## Steps\n%s\n\n## Log\n' "$2" "$3" "$4" > "$1/docs/vision/2026-10-18-x.md"
+}
+
+UNREVIEWED='- [x] frame · [x] build · [ ] review · [ ] fix · [ ] verify · [ ] ship'
+REVIEWED='- [x] frame · [x] build · [x] review · [x] fix · [x] verify · [ ] ship'
+
+test_vision_gate_blocks_an_unreviewed_branch() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/x "$UNREVIEWED" &&
+    fails_with 'unticked for lt/x: review fix verify' gate "$d" "gh pr create --draft --title t"
+}
+
+test_vision_gate_allows_a_reviewed_branch() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/x "$REVIEWED" &&
+    gate "$d" "gh pr create --draft --title t"
+}
+
+test_vision_gate_finds_a_stack_task_from_its_worktree() {
+  local d
+  d=$(gate_repo) && git -C "$d" worktree add -q -b lt/x "$d/wt" &&
+    printf -- '%s\n' '---' 'Status: in_progress' 'Shape: stack' '---' '# S' '' '## [x] Task 1: a' \
+      '- [x] build · [x] review · [x] fix · [x] verify · [x] pr' '- **Branch:** lt/a' '' '## [ ] Task 2: b' \
+      '- [x] build · [x] review · [ ] fix · [ ] verify · [ ] pr' '- **Branch:** lt/x' '' '## Log' > "$d/docs/vision/2026-10-18-s.md" &&
+    fails_with 'unticked for lt/x: fix verify' gate "$d" "cd $d/wt && gh pr create --fill"
+}
+
+test_vision_gate_requires_the_drift_review_when_listed() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x &&
+    printf -- '%s\n' '---' 'Status: in_progress' 'Shape: stack' '---' '# S' '' '## [ ] Task 3: c' \
+      '- [x] build · [x] review · [x] fix · [x] verify · [ ] drift · [ ] pr' '- **Branch:** lt/x' '' '## Log' > "$d/docs/vision/2026-10-18-s.md" &&
+    fails_with 'unticked for lt/x: drift' gate "$d" "gh pr create --fill" &&
+    /usr/bin/sed -i '' 's/\[ \] drift/[x] drift/' "$d/docs/vision/2026-10-18-s.md" && check gate "$d" "gh pr create --fill"
+}
+
+test_vision_gate_reads_the_head_flag() {
+  local d
+  d=$(gate_repo) && single_state "$d" in_progress lt/x "$UNREVIEWED" &&
+    check fails gate "$d" "gh pr create --head lt/x --fill" &&
+    check fails gate "$d" "gh pr create --head \"lt/x\" --fill" &&
+    check fails gate "$d" "gh pr new -H 'lt/x'"
+}
+
+test_vision_gate_reads_a_subshell_cd() {
+  local d
+  d=$(gate_repo) && git -C "$d" worktree add -q -b lt/x "$d/wt" && single_state "$d" in_progress lt/x "$UNREVIEWED" &&
+    check fails gate "$d" "(cd \"$d/wt\" && gh pr create --fill)"
+}
+
+test_vision_gate_blocks_when_it_cannot_check() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/x "$REVIEWED" &&
+    mkdir "$d/stub" && printf '#!/bin/sh\nexit 1\n' > "$d/stub/awk" && chmod +x "$d/stub/awk" || return 1
+  local rc=0
+  jq -n --arg cwd "$d" '{tool_input: {command: "gh pr create --fill"}, cwd: $cwd}' |
+    PATH="$d/stub:$PATH" "$VISION/hooks/pr-gate" 2> /dev/null || rc=$?
+  check [ "$rc" -eq 2 ]
+}
+
+test_vision_gate_ignores_what_it_does_not_govern() {
+  local d
+  d=$(gate_repo) && git -C "$d" switch -q -c lt/x && single_state "$d" in_progress lt/xy "$UNREVIEWED" &&
+    check gate "$d" "gh pr create --fill" &&
+    single_state "$d" done lt/x "$UNREVIEWED" && check gate "$d" "gh pr create --fill" &&
+    single_state "$d" in_progress lt/x "$UNREVIEWED" && check gate "$d" "git status" &&
+    check gate "$d" "gh pr view 3"
 }
 
 run_section() {
@@ -340,7 +660,7 @@ run_section() {
 
 passed=0
 failed=0
-for section in ${*:-guard merge install}; do
+for section in ${*:-guard merge vision install}; do
   run_section "$section"
 done
 echo "$passed passed, $failed failed"

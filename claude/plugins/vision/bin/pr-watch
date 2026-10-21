@@ -1,0 +1,116 @@
+#!/bin/bash
+set -euo pipefail
+
+state=${VISION_PR_WATCH_STATE:-$HOME/.claude/vision/pr-watch.json}
+max_reviews=2
+max_errors=2
+
+usage() {
+  echo "usage: pr-watch scan [--force] [--seed] [--dry-run]" >&2
+  echo "       pr-watch record <owner/repo#number> <posted|clean|error> <reviewed sha> [review url]" >&2
+  exit 2
+}
+
+load() { if [ -s "$state" ]; then cat "$state"; else echo '{}'; fi; }
+
+put() {
+  local tmp
+  mkdir -p "$(dirname "$state")"
+  tmp=$(mktemp "$state.XXXXXX")
+  load | jq --arg k "$1" --arg outcome "$2" --arg sha "$3" --arg url "${4:-}" --arg now "$(date -u +%FT%TZ)" '
+    (.[$k] // {}) as $prev
+    | .[$k] = ($prev | del(.errors)) + {head_sha: $sha, outcome: $outcome, reviewed_at: $now}
+      + (if $url == "" then {} else {review_url: $url} end)
+      + (if $outcome == "posted" or $outcome == "clean" then {review_count: (($prev.review_count // 0) + 1)}
+         elif $outcome == "error" then {errors: (if $prev.head_sha == $sha then ($prev.errors // 0) + 1 else 1 end)}
+         else {} end)' > "$tmp" &&
+    mv "$tmp" "$state" || { rm -f "$tmp"; return 1; }
+}
+
+owner_repo() {
+  local url=${1%/}
+  url=${url%.git}
+  local repo=${url##*/}
+  url=${url%/*}
+  printf '%s/%s\n' "${url##*[:/]}" "$repo" | tr '[:upper:]' '[:lower:]'
+}
+
+# Clones are matched on their origin remote, not their folder name, one and two levels below each root.
+find_clone() {
+  local want root dir url roots
+  want=$(tr '[:upper:]' '[:lower:]' <<< "$1")
+  IFS=: read -ra roots <<< "${VISION_CLONE_ROOTS:-$HOME/projects}"
+  for root in "${roots[@]}"; do
+    [ -n "$root" ] || continue
+    for dir in "$root"/*/ "$root"/*/*/; do
+      [ -e "$dir.git" ] || continue
+      url=$(git -C "$dir" remote get-url origin 2> /dev/null) || continue
+      [ "$(owner_repo "$url")" = "$want" ] && { printf '%s\n' "${dir%/}"; return 0; }
+    done
+  done
+  return 1
+}
+
+scan() {
+  local force=0 seed=0 dry=0 arg me prs repo number key pr head prev mine clone
+  for arg; do
+    case $arg in
+      --force) force=1 ;;
+      --seed) seed=1 ;;
+      --dry-run) dry=1 ;;
+      *) usage ;;
+    esac
+  done
+  note() {
+    echo "$key: $1" >&2
+    [ "$dry" -eq 1 ] || put "$key" "$1" "$head"
+  }
+  me=$(gh api user --jq .login)
+  prs=$(gh search prs "user-review-requested:@me" --state=open --limit 1000 --json repository,number,isDraft,author \
+    --jq ".[] | select((.isDraft | not) and .author.login != \"$me\") | \"\(.repository.nameWithOwner) \(.number)\"")
+  while read -r repo number; do
+    [ -n "$repo" ] || continue
+    key="$repo#$number"
+    pr=$(gh pr view "$number" --repo "$repo" --json headRefOid,baseRefOid,baseRefName,title,url) ||
+      { echo "$key: could not read the pull request; next pass retries it" >&2; continue; }
+    head=$(jq -r .headRefOid <<< "$pr")
+    if [ "$seed" -eq 1 ]; then
+      note seeded
+      continue
+    fi
+    prev=$(load | jq -c --arg k "$key" '.[$k] // {}')
+    if [ "$force" -eq 0 ]; then
+      if jq -e --arg head "$head" --argjson max "$max_errors" \
+        '.head_sha == $head and .outcome == "error" and .errors >= $max' <<< "$prev" > /dev/null; then
+        echo "$key: failed $max_errors times at this head; --force retries it" >&2
+        continue
+      fi
+      jq -e --arg head "$head" '.head_sha == $head and (.outcome | IN("error", "skipped_not_cloned") | not)' \
+        <<< "$prev" > /dev/null && continue
+      mine=$(gh api "repos/$repo/pulls/$number/reviews" --paginate --jq ".[] | select(.user.login == \"$me\") | .commit_id") ||
+        { echo "$key: could not read its reviews; next pass retries it" >&2; continue; }
+      if grep -qx "$head" <<< "$mine"; then
+        note already_reviewed
+        continue
+      fi
+      if [ "$(jq '.review_count // 0' <<< "$prev")" -ge "$max_reviews" ]; then
+        note capped
+        continue
+      fi
+    fi
+    clone=$(find_clone "$repo") || { note skipped_not_cloned; continue; }
+    jq -c --arg key "$key" --arg repo "$repo" --argjson number "$number" --arg clone "$clone" \
+      '{key: $key, repo: $repo, number: $number, head: .headRefOid, base: .baseRefOid, base_ref: .baseRefName,
+        title, url, clone: $clone}' <<< "$pr"
+  done <<< "$prs"
+}
+
+case ${1:-} in
+  scan) shift && scan "$@" ;;
+  record)
+    [ $# -ge 4 ] && [ $# -le 5 ] || usage
+    case $3 in posted | clean | error) ;; *) usage ;; esac
+    put "$2" "$3" "$4" "${5:-}"
+    ;;
+  *) usage ;;
+esac

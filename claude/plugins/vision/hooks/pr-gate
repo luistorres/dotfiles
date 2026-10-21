@@ -1,0 +1,51 @@
+#!/bin/bash
+set -euo pipefail
+shopt -s nullglob
+
+input=$(cat)
+cmd=$(jq -r '.tool_input.command // ""' <<< "$input")
+cwd=$(jq -r '.cwd // "."' <<< "$input")
+grep -qE '(^|[;&|(`[:space:]])gh[[:space:]]+pr[[:space:]]+(create|new)([[:space:]]|$)' <<< "$cmd" || exit 0
+# Exit 1 would not block the tool call, so a gate that breaks while checking a PR fails closed.
+trap 'echo "vision: pr-gate could not check this PR, so it is blocked" >&2; exit 2' ERR
+
+dir=$(grep -oE '^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+[^[:space:]&;|)]+' <<< "$cmd" | head -1 | sed -E "s/^[[:space:]]*\(?[[:space:]]*cd[[:space:]]+//; s/^[\"']//; s/[\"']\$//" || true)
+dir=${dir/#\~/$HOME}
+case $dir in
+  '') dir=$cwd ;;
+  /*) ;;
+  *) dir=$cwd/$dir ;;
+esac
+
+branch=$(grep -oE -- '(--head|-H)[[:space:]=]+[^[:space:]]+' <<< "$cmd" | head -1 | sed -E "s/^(--head|-H)[[:space:]=]+//; s/^[\"']//; s/[\"']\$//" || true)
+[ -n "$branch" ] || branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2> /dev/null) || exit 0
+common=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2> /dev/null) || exit 0
+main=$(dirname "$common")
+
+blocked=0
+for file in "$main"/docs/vision/*.md; do
+  grep -q '^Status: in_progress$' "$file" || continue
+  steps=$(awk -v b="$branch" '
+    function flush() { if (hit && found == "") found = steps; hit = 0; steps = "" }
+    NR == 1 && $0 == "---" { front = 1; next }
+    front && $0 == "---" { front = 0; next }
+    front { if ($0 == "Branch: " b) single = 1; next }
+    /^## / { flush(); next }
+    /^- \[[ x]\] / && /·/ { if (first == "") first = $0; if (steps == "") steps = $0 }
+    $0 == "- **Branch:** " b { hit = 1 }
+    END { flush(); if (single) print (first == "" ? "none" : first); else if (found != "") print found }
+  ' "$file")
+  [ -n "$steps" ] || continue
+  missing=""
+  required="review fix verify"
+  grep -qF '] drift' <<< "$steps" && required="$required drift"
+  for step in $required; do
+    grep -qF "[x] $step" <<< "$steps" || missing="$missing $step"
+  done
+  if [ -n "$missing" ]; then
+    echo "vision: ${file#"$main"/} shows these steps unticked for $branch:$missing. Run vision:review and tick these steps before opening the PR." >&2
+    blocked=1
+  fi
+done
+
+[ "$blocked" -eq 0 ] || exit 2
