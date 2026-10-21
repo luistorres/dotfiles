@@ -5,7 +5,7 @@ import type { Job, Run } from '../types'
 import { agentJobs, agentTimes, backgroundTaskId, keepJobs, noticesOf, reconcile, settle, shellLabel } from './jobs'
 import { prStatusFrom } from './pr'
 import { parseRun, pick, type Candidate } from './run'
-import { paneLines, statusText, type Line, type Snapshot, type Tone } from './view'
+import { oneLine, paneLines, statusText, type Line, type Snapshot, type Tone } from './view'
 
 type $ = EngineInterface
 type Ui = ReturnType<$['ui']['resolve']>
@@ -197,7 +197,7 @@ const fetchPrs = async ($: $, at: number) => {
   }
 }
 
-const paneRows = async ($: $) => Math.min(MAX_ROWS, paneLines(await snapshot($)).length + 1)
+const paneRows = async ($: $) => Math.min(MAX_ROWS, paneLines(await snapshot($)).length)
 
 // An open from a timer is unasked and may wait undrawn on a narrow terminal, so only a pane already on screen is resized.
 const fitPane = async ($: $) => {
@@ -223,12 +223,14 @@ const advance = async ($: $) => {
 }
 
 const openPane = async ($: $): Promise<string> => {
-  await update($, modeAtom, () => 'pane')
-  clearStatusLine($)
   await refreshForCommand($)
   openedRows = await paneRows($)
-  const placed = await $.ui.open({ id: PANE, title: 'Vision', focus: true, columns: 64, rows: openedRows })
-  if (placed.isPlaced) return 'Vision view opened.'
+  const placed = await $.ui.open({ id: PANE, title: 'Vision', columns: 64, rows: openedRows })
+  if (placed.isPlaced) {
+    await update($, modeAtom, () => 'pane')
+    clearStatusLine($)
+    return 'Vision view opened.'
+  }
 
   await $.ui.close({ id: PANE })
   await update($, modeAtom, () => 'line')
@@ -236,10 +238,11 @@ const openPane = async ($: $): Promise<string> => {
   return `The vision pane could not be placed (${placed.reason}), so the view shows in the status line instead.`
 }
 
-const minimize = async ($: $) => {
+const showStatusLine = async ($: $): Promise<string> => {
   await update($, modeAtom, () => 'line')
   await $.ui.close({ id: PANE })
   await refreshForCommand($)
+  return 'Vision view shown in the status line.'
 }
 
 const closeAll = async ($: $): Promise<string> => {
@@ -282,19 +285,13 @@ const attach = async ($: $, query: string): Promise<string> => {
 }
 
 const USAGE =
-  '/vision-view opens the pane · /vision-view min shows one status line · /vision-view close · /vision-view finished shows or hides finished jobs · /vision-view attach <part of a state file name>, or attach alone to follow the latest run · ctrl+x tab hands the pane the keys for h, m and q'
+  '/vision-view shows one status line (min does too) · /vision-view pane opens the pane · /vision-view close · /vision-view finished shows or hides finished jobs · /vision-view attach <part of a state file name>, or attach alone to follow the latest run'
 
 const runCommand = async ($: $, args: string): Promise<string> => {
   const [word = '', ...rest] = args.trim().split(/\s+/)
-  if (word === '') {
-    if ((await read($, modeAtom)) === 'pane') await $.ui.close({ id: PANE })
-    return openPane($)
-  }
+  if (word === '' || word === 'min') return showStatusLine($)
+  if (word === 'pane') return openPane($)
   if (word === 'close') return closeAll($)
-  if (word === 'min') {
-    await minimize($)
-    return 'Vision view minimized to the status line.'
-  }
   if (word === 'finished') {
     await toggleFinished($)
     return (await read($, isShowingFinishedAtom)) ? 'Finished jobs shown.' : 'Finished jobs hidden.'
@@ -304,6 +301,8 @@ const runCommand = async ($: $, args: string): Promise<string> => {
   return USAGE
 }
 
+const failure = (error: unknown) => `vision-view: ${oneLine(error instanceof Error ? error.message : String(error), 120)}`
+
 const TONE: Record<Tone, { color?: string; dimColor?: boolean }> = {
   run: { color: 'green' },
   wait: { color: 'yellow' },
@@ -311,11 +310,24 @@ const TONE: Record<Tone, { color?: string; dimColor?: boolean }> = {
   done: { color: 'green', dimColor: true },
   dim: { dimColor: true },
   plain: {},
+  now: { color: '#FF8700' },
 }
 
 const row = (ui: Ui, line: Line) => {
   const { Box, Link, Text } = ui
   const style = TONE[line.tone]
+  if (line.parts !== undefined) {
+    return (
+      <Box flexDirection="row">
+        {line.parts.map(part => (
+          <Text color={TONE[part.tone].color} bold={part.isBold === true}>
+            {part.text}
+          </Text>
+        ))}
+      </Box>
+    )
+  }
+
   if (line.href !== undefined) {
     const indent = line.text.match(/^\s*/)?.[0] ?? ''
     return (
@@ -333,31 +345,18 @@ const row = (ui: Ui, line: Line) => {
   )
 }
 
-const pane = ($: $, ui: Ui, data: Snapshot) => {
-  const { Box, Button, Text } = ui
-  const [head, ...body] = paneLines(data)
+const pane = (ui: Ui, data: Snapshot) => {
+  const { Box } = ui
 
-  return (
-    <Box flexDirection="column">
-      {head === undefined ? null : row(ui, head)}
-      <Box flexDirection="row">
-        <Button key="ctl-finished" plain hotkey="h" label={data.isShowingFinished ? 'hide finished' : 'show finished'} onPress={() => toggleFinished($)} />
-        <Text>  </Text>
-        <Button key="ctl-minimize" plain hotkey="m" label="minimize" onPress={() => minimize($)} />
-        <Text>  </Text>
-        <Button key="ctl-close" plain hotkey="q" label="close" onPress={() => closeAll($)} />
-      </Box>
-      {body.map(line => row(ui, line))}
-    </Box>
-  )
+  return <Box flexDirection="column">{paneLines(data).map(line => row(ui, line))}</Box>
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'vision-view',
-      description: 'Open the vision pane; min, close, finished and attach are its other actions',
-      argumentHint: '[min|close|finished|attach <name>]',
+      description: 'Show the vision run in the status line; pane opens it as a pane, close, finished and attach are its other actions',
+      argumentHint: '[pane|min|close|finished|attach <name>]',
     })
     const at = await $.clock.now()
     // A reload raises session.start again but keeps $.state, so the session's start is set once.
@@ -381,7 +380,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'vision-view' }, async ($, e) => ({ text: await runCommand($, e.args) }))
+  on('command.run', { command: 'vision-view' }, async ($, e) => ({ text: await runCommand($, e.args).catch(failure) }))
 
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE && e.origin.kind === 'person') await update($, modeAtom, () => 'closed')
@@ -473,5 +472,5 @@ export const register: Register = on => {
     return spawned
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => pane($, $.ui.resolve(e), await snapshot($)))
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => pane($.ui.resolve(e), await snapshot($)))
 }

@@ -41,11 +41,26 @@ test('a stack shows each task once, the current one with its steps, and the ship
   expect(text.filter(one => one.includes('Task 2')).length).toBe(1)
 })
 
+test('the current step of a strip is its own part, with its label and arrow in the now tone, bold', () => {
+  const strip = (data: Snapshot) => paneLines(data).find(line => line.text.includes('review ▶'))
+  const parts = [
+    { text: 'review', tone: 'now', isBold: true },
+    { text: ' ▶', tone: 'now', isBold: true },
+  ]
+
+  for (const run of [STACK_LATER, SINGLE]) {
+    const found = strip(snapshot({ run: parseRun('x', run) }))
+    expect(found?.parts).toEqual(expect.arrayContaining(parts))
+    expect(found?.parts?.map(part => part.text).join('')).toBe(found?.text)
+    expect(found?.parts?.filter(part => part.tone === 'now').length).toBe(2)
+  }
+})
+
 test('running work shows how long it has run, and finished work collapses into a count', () => {
   const jobs = [job('a', 'running', 40_000), job('b', 'done', 10_000, 20_000), job('c', 'failed', 10_000, 30_000)]
 
   expect(texts(snapshot({ jobs }))).toEqual(
-    expect.arrayContaining(['● job a · running 1m 0s', '2 finished, 1 failed or stopped · h shows them']),
+    expect.arrayContaining(['● job a · running 1m 0s', '2 finished, 1 failed or stopped · /vision-view finished shows them']),
   )
   expect(texts(snapshot({ jobs, isShowingFinished: true }))).toEqual(
     expect.arrayContaining(['Finished', '✓ job b · done after 10s', '✗ job c · failed after 20s']),
@@ -58,7 +73,7 @@ test('finished jobs beyond the ones shown are counted as earlier ones, with thei
   const shown = texts(snapshot({ jobs, isShowingFinished: true }))
   expect(shown.indexOf('2 earlier finished, 1 failed or stopped')).toBe(shown.indexOf('Finished') + 1)
   expect(texts(snapshot({ jobs: jobs.slice(1), isShowingFinished: true }))).toContain('1 earlier finished')
-  expect(texts(snapshot({ jobs }))).toContain('10 finished, 1 failed or stopped · h shows them')
+  expect(texts(snapshot({ jobs }))).toContain('10 finished, 1 failed or stopped · /vision-view finished shows them')
 })
 
 test('an issue set lists each issue with the next one marked', () => {

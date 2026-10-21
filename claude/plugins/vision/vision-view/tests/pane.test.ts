@@ -32,6 +32,7 @@ type World = {
   statuses: (string | undefined)[]
   opens: { rows?: number; focus?: true }[]
   isPlaced: boolean
+  isOpenDenied: boolean
   isPaneListed: boolean
   canPlace: boolean
   closes: number
@@ -59,6 +60,7 @@ const world = (over: Partial<World> = {}): World => ({
   statuses: [],
   opens: [],
   isPlaced: true,
+  isOpenDenied: false,
   isPaneListed: true,
   canPlace: true,
   closes: 0,
@@ -122,6 +124,7 @@ const stubs = (on: On, world: World, clock: Clock) => {
   })
   on('agent.list', () => (world.isAgentListBroken ? { deny: 'no agents here' } : { value: world.agents }))
   on('ui.open', ($, e) => {
+    if (world.isOpenDenied) return { deny: 'the surface refuses panes' }
     world.opens.push(e)
     return { value: world.canPlace ? { isPlaced: true as const } : { isPlaced: false as const, reason: 'no-surface' } }
   })
@@ -160,7 +163,7 @@ const command = (args: string) => ({
 
 const begin = async ($: Engine) => {
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
-  await $.command.run(command(''))
+  await $.command.run(command('pane'))
 }
 
 type Node = { type: string; props: Record<string, unknown>; children?: unknown[] }
@@ -170,8 +173,9 @@ const words = (node: unknown): string[] => {
   if (typeof node !== 'object' || node === null) return []
 
   const { type, props, children = [] } = node as Node
-  if (type === 'Button' || type === 'Link') return [String(props.label)]
+  if (type === 'Link') return [String(props.label)]
   if (type === 'Text') return [children.flatMap(words).join('')]
+  if (type === 'Box' && props.flexDirection === 'row' && children.length > 0 && children.every(child => (child as Node).type === 'Text')) return [children.flatMap(words).join('')]
   return children.flatMap(words)
 }
 
@@ -181,8 +185,6 @@ const screen = async ($: Engine): Promise<string[]> => {
   await ui.unmount()
   return words(root).filter(one => one.trim() !== '')
 }
-
-const CONTROLS = ['show finished', 'minimize', 'close']
 
 test('the pane follows a stack from the state file and the host, and its clocks keep moving', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -203,7 +205,7 @@ test('the pane follows a stack from the state file and the host, and its clocks 
   await clock.advance(2000)
 
   const first = await screen($)
-  expect(first.slice(0, 4)).toEqual(['vision · Reporting adapters for the ledger service', ...CONTROLS])
+  expect(first[0]).toBe('vision · Reporting adapters for the ledger service')
   expect(first).toEqual(
     expect.arrayContaining([
       '▶ Task 1: balance queries and limit checks',
@@ -230,15 +232,16 @@ test('the pane follows a stack from the state file and the host, and its clocks 
       '▶ Task 2 — payment reissue',
       '   build ✓  review ▶  fix ·  verify ·  drift ·  pr ·',
       'nothing right now',
-      '2 finished · h shows them',
+      '2 finished · /vision-view finished shows them',
     ]),
   )
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Link' }))?.props).toMatchObject({ href: 'https://github.com/example-org/ledger/pull/62' })
-  await ui.press({ key: 'ctl-finished' })
-  expect(await ui.find({ type: 'Text', text: /^✓ GPT second opinion on task 1 · done after 1m 2s$/ })).toBeDefined()
   await ui.unmount()
+
+  await $.command.run(command('finished'))
+  expect(await screen($)).toContain('✓ GPT second opinion on task 1 · done after 1m 2s')
 })
 
 test('a slow gh, a failing read or a failing agent list never stops the clock or the refresh', async ($, on) => {
@@ -297,7 +300,7 @@ test('a read that never answers holds up neither the command nor the vision skil
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
   await $.tool.call({ tool: 'Skill', skill: 'vision:vision' })
-  const opening = $.command.run(command(''))
+  const opening = $.command.run(command('pane'))
   await clock.advance(3000)
   expect(await opening).toMatchObject({ text: 'Vision view opened.' })
 })
@@ -421,7 +424,7 @@ test('finished subagents beyond forty make room for new ones', async ($, on) => 
 
   await begin($)
   await clock.advance(2000)
-  expect(await screen($)).toContain('40 finished · h shows them')
+  expect(await screen($)).toContain('40 finished · /vision-view finished shows them')
 })
 
 test('a background command missing from the end-of-turn list has ended even without its notice', async ($, on) => {
@@ -439,7 +442,7 @@ test('a background command missing from the end-of-turn list has ended even with
 
   await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
   await clock.advance(2000)
-  expect(await screen($)).toEqual(expect.arrayContaining(['● waiting for you', '1 finished · h shows them']))
+  expect(await screen($)).toEqual(expect.arrayContaining(['● waiting for you', '1 finished · /vision-view finished shows them']))
 })
 
 test('a subagent starting a turn does not make the main session look busy', async ($, on) => {
@@ -476,7 +479,7 @@ test('a subagent stays on screen after the engine stops listing it', async ($, o
   await clock.advance(4000)
   w.agents = []
   await clock.advance(4000)
-  expect(await screen($)).toContain('1 finished · h shows them')
+  expect(await screen($)).toContain('1 finished · /vision-view finished shows them')
 
   await $.command.run(command('finished'))
   expect(await screen($)).toContain('✓ Explore · probe · done')
@@ -491,7 +494,7 @@ test('following the latest run again shows no run once none is left', async ($, 
   await $.command.run(command('attach ledger'))
   w.files = []
   await $.command.run(command('attach'))
-  expect(await screen($)).toEqual(['No vision run in this checkout yet.', ...CONTROLS])
+  expect(await screen($)).toEqual(['No vision run in this checkout yet.'])
 })
 
 for (const source of ['clear', 'resume', 'fork'] as const) {
@@ -552,15 +555,72 @@ test('close takes the pane and the status line down and stops refreshing', async
   expect(w.statuses.at(-1)).toBe(undefined)
 })
 
-test('running /vision-view while the pane is up opens it again, asking for the keyboard', async ($, on) => {
+test('running /vision-view pane while the pane is up opens it again, closing nothing and asking for no keyboard', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const w = world()
   stubs(on, w, clock)
 
   await begin($)
+  await $.command.run(command('pane'))
+  expect(w.closes).toBe(0)
+  expect(w.opens.length).toBe(2)
+  expect(w.opens.some(one => 'focus' in one)).toBe(false)
+})
+
+test('the current step is drawn orange and bold, and the strip still reads whole', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  stubs(on, world({ state: STACK_START }), clock)
+
+  await begin($)
+  expect(await screen($)).toContain('   build ✓  review ▶  fix ·  verify ·  pr ·')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /^review$/ }))?.props).toMatchObject({ color: '#FF8700', bold: true })
+  expect((await ui.find({ type: 'Text', text: /^ ▶$/ }))?.props).toMatchObject({ color: '#FF8700', bold: true })
+  await ui.unmount()
+})
+
+test('the pane is read-only: no button, and as many rows as lines', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ files: [] })
+  stubs(on, w, clock)
+
+  await begin($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  await ui.unmount()
+  expect(w.opens[0]?.rows).toBe(1)
+})
+
+test('/vision-view alone shows the status line, and /vision-view pane opens the pane', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
   await $.command.run(command(''))
-  expect(w.closes).toBe(1)
-  expect(w.opens.map(one => one.focus)).toEqual([true, true])
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · waiting for you')
+  expect(w.opens).toEqual([])
+
+  await $.command.run(command('pane'))
+  expect(w.opens.length).toBe(1)
+  expect(w.statuses.at(-1)).toBe(undefined)
+})
+
+test('a command whose work throws still answers, and leaves the status line running', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  await $.command.run(command('min'))
+  w.isOpenDenied = true
+  expect(await $.command.run(command('pane'))).toMatchObject({ text: expect.stringMatching(/^vision-view: .+/) })
+
+  w.state = STACK_START
+  w.mtimeMs = 2
+  await clock.advance(2000)
+  expect(w.statuses.at(-1)).toBe('vision · task 1/2 review · waiting for you')
 })
 
 test('a permission dialog, which hides the pane while it is up, never leaves it saying it waits for an answer', async ($, on) => {
@@ -628,7 +688,7 @@ test('where no pane can be placed the view falls back to the status line and say
   stubs(on, w, clock)
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
-  const reply = await $.command.run(command(''))
+  const reply = await $.command.run(command('pane'))
 
   expect(reply).toMatchObject({ text: expect.stringContaining('could not be placed (no-surface)') })
   expect(w.closes).toBe(1)

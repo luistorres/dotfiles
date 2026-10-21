@@ -3,9 +3,11 @@ import { isLive } from './jobs'
 import { prBadge } from './pr'
 import { isFinished, position } from './run'
 
-export type Tone = 'run' | 'wait' | 'fail' | 'done' | 'dim' | 'plain'
+export type Tone = 'run' | 'wait' | 'fail' | 'done' | 'dim' | 'plain' | 'now'
 
-export type Line = { text: string; tone: Tone; isBold?: boolean; href?: string }
+export type Part = { text: string; tone: Tone; isBold?: boolean }
+
+export type Line = { text: string; tone: Tone; isBold?: boolean; href?: string; parts?: Part[] }
 
 export type Attention = 'working' | 'asking' | 'idle'
 
@@ -50,6 +52,25 @@ const line = (text: string, tone: Tone = 'plain', extra: Partial<Line> = {}): Li
 const stepStrip = (steps: readonly Check[]): string => {
   const current = steps.find(step => !step.isDone)
   return steps.map(step => `${step.label} ${step.isDone ? '✓' : step === current ? '▶' : '·'}`).join('  ')
+}
+
+const stepLine = (steps: readonly Check[], indent: string): Line => {
+  const text = `${indent}${stepStrip(steps)}`
+  const current = steps.find(step => !step.isDone)
+  if (current === undefined) return line(text)
+
+  const parts = steps.flatMap((step, index): Part[] => {
+    const lead = index === 0 ? indent : '  '
+    if (step !== current) return [{ text: `${lead}${step.label} ${step.isDone ? '✓' : '·'}`, tone: 'plain' }]
+
+    return [
+      ...(lead === '' ? [] : [{ text: lead, tone: 'plain' as const }]),
+      { text: step.label, tone: 'now', isBold: true },
+      { text: ' ▶', tone: 'now', isBold: true },
+    ]
+  })
+
+  return line(text, 'plain', { parts })
 }
 
 const prLine = (task: Task, prs: Snapshot['prs'], indent: string): Line[] => {
@@ -102,7 +123,7 @@ const taskLines = (run: Run, prs: Snapshot['prs']): Line[] => {
   if (run.shape === 'single') {
     const task = run.tasks[0]
     if (task === undefined) return []
-    return [line(stepStrip(task.steps)), ...criteriaLine(task, ''), ...prLine(task, prs, '')]
+    return [stepLine(task.steps, ''), ...criteriaLine(task, ''), ...prLine(task, prs, '')]
   }
 
   return run.tasks.flatMap((task, index) => {
@@ -111,7 +132,7 @@ const taskLines = (run: Run, prs: Snapshot['prs']): Line[] => {
     const head = line(`${mark} ${task.title}`, task.isDone ? 'done' : isCurrent ? 'run' : 'dim', { isBold: isCurrent })
     if (run.shape === 'issues') return [head]
     if (isCurrent) {
-      return [head, ...(task.steps.length === 0 ? [] : [line(`   ${stepStrip(task.steps)}`)]), ...criteriaLine(task, '   '), ...prLine(task, prs, '   ')]
+      return [head, ...(task.steps.length === 0 ? [] : [stepLine(task.steps, '   ')]), ...criteriaLine(task, '   '), ...prLine(task, prs, '   ')]
     }
 
     return [head, ...prLine(task, prs, '   ')]
@@ -153,7 +174,7 @@ const tallyLine = (hidden: readonly Job[], isShowing: boolean): Line[] => {
 
   const failed = hidden.filter(job => job.status === 'failed' || job.status === 'stopped').length
   const text = `${hidden.length} ${isShowing ? 'earlier ' : ''}finished${failed > 0 ? `, ${failed} failed or stopped` : ''}`
-  return [line(isShowing ? text : `${text} · h shows them`, failed > 0 ? 'fail' : 'dim')]
+  return [line(isShowing ? text : `${text} · /vision-view finished shows them`, failed > 0 ? 'fail' : 'dim')]
 }
 
 const jobLines = (snapshot: Snapshot): Line[] => {
