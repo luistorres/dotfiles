@@ -87,6 +87,16 @@ test('the mark in front of the current task and of live work carries its state, 
   expect(parts('✓ Task 1')).toBe(undefined)
 })
 
+test('the check of a finished step is green, in a strip still going and in one all done', () => {
+  const going = paneLines(snapshot({})).find(line => line.text.includes('review ▶'))
+  const done = paneLines(snapshot({ run: parseRun('x', SINGLE.replace(/\[ \]/g, '[x]')) })).find(line => line.text.includes('ship ✓'))
+
+  expect(going?.parts?.filter(part => part.text === '✓')).toEqual([{ text: '✓', tone: 'done' }])
+  expect(done?.parts?.filter(part => part.text === '✓').length).toBe(6)
+  expect(done?.parts?.every(part => part.text !== '✓' || part.tone === 'done')).toBe(true)
+  expect(done?.parts?.map(part => part.text).join('')).toBe(done?.text)
+})
+
 test('running work shows how long it has run, and finished work collapses into a count', () => {
   const jobs = [job('a', 'running', 40_000), job('b', 'done', 10_000, 20_000), job('c', 'failed', 10_000, 30_000)]
 

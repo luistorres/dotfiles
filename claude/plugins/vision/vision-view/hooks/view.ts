@@ -66,13 +66,11 @@ const stepStrip = (steps: readonly Check[]): string => {
 }
 
 const stepLine = (steps: readonly Check[], indent: string): Line => {
-  const text = `${indent}${stepStrip(steps)}`
   const current = steps.find(step => !step.isDone)
-  if (current === undefined) return line(text)
-
   const parts = steps.flatMap((step, index): Part[] => {
     const lead = index === 0 ? indent : '  '
-    if (step !== current) return [{ text: `${lead}${step.label} ${step.isDone ? '✓' : '·'}`, tone: 'plain' }]
+    if (step.isDone) return [{ text: `${lead}${step.label} `, tone: 'plain' }, { text: '✓', tone: 'done' }]
+    if (step !== current) return [{ text: `${lead}${step.label} ·`, tone: 'plain' }]
 
     return [
       ...(lead === '' ? [] : [{ text: lead, tone: 'plain' as const }]),
@@ -81,7 +79,7 @@ const stepLine = (steps: readonly Check[], indent: string): Line => {
     ]
   })
 
-  return line(text, 'plain', { parts })
+  return line(`${indent}${stepStrip(steps)}`, 'plain', { parts })
 }
 
 const prLine = (task: Task, prs: Snapshot['prs'], indent: string): Line[] => {
