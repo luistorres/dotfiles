@@ -21,38 +21,70 @@ const notice = (taskId: string, status: string) =>
   `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>t-${taskId}</tool-use-id>\n<status>${status}</status>\n<summary>…</summary>\n</task-notification>`
 
 type On = Parameters<TestBody>[1]
+type Clock = ReturnType<typeof mock.clock>
 
 type World = {
   state: string
   mtimeMs: number
+  files: string[]
   agents: AgentInfo[]
   nextTaskId: string
   statuses: (string | undefined)[]
-  isGhBroken: boolean
+  opens: { rows?: number; focus?: true }[]
+  isPlaced: boolean
+  gh: 'ok' | 'broken' | 'slow'
+  isReadBroken: boolean
+  hangingReads: number
+  isAgentListBroken: boolean
 }
+
+const world = (over: Partial<World> = {}): World => ({
+  state: STACK_LATER,
+  mtimeMs: 1,
+  files: ['2026-01-05-ledger.md'],
+  agents: [],
+  nextTaskId: 'bg1',
+  statuses: [],
+  opens: [],
+  isPlaced: true,
+  gh: 'ok',
+  isReadBroken: false,
+  hangingReads: 0,
+  isAgentListBroken: false,
+  ...over,
+})
 
 const ran = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
 
-const stubs = (on: On, world: World) => {
+const stubs = (on: On, world: World, clock: Clock) => {
   on('session.start', () => ({ cwd: '/repo' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
     if (e.argv[0] === 'git') return { value: ran('/repo/.git\n') }
-    if (world.isGhBroken) return { deny: 'gh is not installed' }
+    if (world.gh === 'broken') return { deny: 'gh is not installed' }
+    if (world.gh === 'slow') await clock.sleep(60_000)
     return { value: ran(JSON.stringify({ state: 'OPEN', isDraft: true, statusCheckRollup: [{ conclusion: 'SUCCESS' }] })) }
   })
   on('fs.list', () => ({
     value: [
-      { name: '2026-01-05-ledger.md', kind: 'file', size: 1, isLink: false, mtimeMs: 1 },
-      { name: 'plans', kind: 'dir', size: 0, isLink: false, mtimeMs: 1 },
+      ...world.files.map(name => ({ name, kind: 'file' as const, size: 1, isLink: false, mtimeMs: world.mtimeMs })),
+      { name: 'plans', kind: 'dir' as const, size: 0, isLink: false, mtimeMs: 0 },
     ],
   }))
-  on('fs.stat', () => ({ value: { kind: 'file', size: world.state.length, mtimeMs: world.mtimeMs, isLink: false } }))
-  on('fs.read', () => ({ value: world.state }))
-  on('agent.list', () => ({ value: world.agents }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('fs.read', async () => {
+    if (world.hangingReads > 0) {
+      world.hangingReads -= 1
+      await clock.sleep(600_000)
+    }
+    return world.isReadBroken ? { deny: 'the disk is busy' } : { value: world.state }
+  })
+  on('agent.list', () => (world.isAgentListBroken ? { deny: 'no agents here' } : { value: world.agents }))
+  on('ui.open', ($, e) => {
+    world.opens.push(e)
+    return { value: { isPlaced: true } }
+  })
   on('ui.close', () => ({ value: undefined }))
-  on('ui.panes', () => ({ value: [{ id: 'vision-view', title: 'Vision', isShown: true, isFocused: true, isPlaced: true }] }))
+  on('ui.panes', () => ({ value: [{ id: 'vision-view', title: 'Vision', isShown: true, isFocused: true, isPlaced: world.isPlaced }] }))
   on('ui.status', ($, e) => {
     world.statuses.push(e.text)
     return { value: undefined }
@@ -64,6 +96,8 @@ const stubs = (on: On, world: World) => {
   )
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('classic.Stop', () => ({}))
+  on('classic.SessionStart', () => ({}))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
 }
 
@@ -79,24 +113,34 @@ const begin = async ($: Engine) => {
   await $.command.run(command(''))
 }
 
-const shown = async ($: Engine, text: string | RegExp) => {
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const found = await ui.find({ type: 'Text', text })
-  await ui.unmount()
-  return found !== undefined
+type Node = { type: string; props: Record<string, unknown>; children?: unknown[] }
+
+const words = (node: unknown): string[] => {
+  if (typeof node === 'string') return [node]
+  if (typeof node !== 'object' || node === null) return []
+
+  const { type, props, children = [] } = node as Node
+  if (type === 'Button' || type === 'Link') return [String(props.label)]
+  if (type === 'Text') return [children.flatMap(words).join('')]
+  return children.flatMap(words)
 }
+
+const screen = async ($: Engine): Promise<string[]> => {
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const root = await ui.find({ type: 'Box' })
+  await ui.unmount()
+  return words(root).filter(one => one.trim() !== '')
+}
+
+const CONTROLS = ['show finished', 'minimize', 'close']
 
 test('the pane follows a stack from the state file and the host, and its clocks keep moving', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  const world: World = {
+  const w = world({
     state: STACK_START,
-    mtimeMs: 1,
     agents: [{ id: 'a1', description: 'Review task 1', type: 'vision:code-reviewer', status: 'running' }],
-    nextTaskId: 'bg1',
-    statuses: [],
-    isGhBroken: false,
-  }
-  stubs(on, world)
+  })
+  stubs(on, w, clock)
 
   await begin($)
   await $.tool.call({
@@ -108,76 +152,179 @@ test('the pane follows a stack from the state file and the host, and its clocks 
   await $.tool.call({ tool: 'Bash', command: "sed -n '1,9p' SKILL.md | grep 'second-opinion [--model <model>] <reviewer>'" })
   await clock.advance(2000)
 
-  expect(await shown($, '▶ Task 1: balance queries and limit checks')).toBe(true)
-  expect(await shown($, '● GPT second opinion on task 1 · running 2s')).toBe(true)
-  expect(await shown($, '● vision:code-reviewer · Review task 1 · running')).toBe(true)
-  expect(await shown($, /sed -n|<model>/)).toBe(false)
+  const first = await screen($)
+  expect(first.slice(0, 4)).toEqual(['vision · Reporting adapters for the ledger service', ...CONTROLS])
+  expect(first).toEqual(
+    expect.arrayContaining([
+      '▶ Task 1: balance queries and limit checks',
+      '● GPT second opinion on task 1 · running 2s',
+      '● vision:code-reviewer · Review task 1 · running',
+    ]),
+  )
+  expect(first.some(one => /sed -n|<model>/.test(one))).toBe(false)
 
   await clock.advance(60_000)
-  expect(await shown($, '● GPT second opinion on task 1 · running 1m 2s')).toBe(true)
+  expect(await screen($)).toContain('● GPT second opinion on task 1 · running 1m 2s')
 
   await $.prompt.submit({ origin: { kind: 'task-notification' }, text: notice('bg1', 'completed'), wait: false })
-  world.agents = [{ ...world.agents[0]!, status: 'completed' }]
-  world.state = STACK_LATER
-  world.mtimeMs = 2
+  w.agents = [{ ...w.agents[0]!, status: 'completed' }]
+  w.state = STACK_LATER
+  w.mtimeMs = 2
+  await clock.advance(2000)
   await clock.advance(2000)
 
-  expect(await shown($, '✓ Task 1: balance queries and limit checks')).toBe(true)
-  expect(await shown($, '▶ Task 2 — payment reissue')).toBe(true)
-  expect(await shown($, '   build ✓  review ▶  fix ·  verify ·  drift ·  pr ·')).toBe(true)
-  expect(await shown($, 'nothing right now')).toBe(true)
-  expect(await shown($, '2 finished · h shows them')).toBe(true)
+  expect(await screen($)).toEqual(
+    expect.arrayContaining([
+      '✓ Task 1: balance queries and limit checks',
+      'PR #62 · draft · CI ✓ 1',
+      '▶ Task 2 — payment reissue',
+      '   build ✓  review ▶  fix ·  verify ·  drift ·  pr ·',
+      'nothing right now',
+      '2 finished · h shows them',
+    ]),
+  )
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const link = await ui.find({ type: 'Link' })
-  expect(link?.props).toMatchObject({ href: 'https://github.com/example-org/ledger/pull/62', label: 'PR #62 · draft · CI ✓ 1' })
+  expect((await ui.find({ type: 'Link' }))?.props).toMatchObject({ href: 'https://github.com/example-org/ledger/pull/62' })
   await ui.press({ key: 'ctl-finished' })
   expect(await ui.find({ type: 'Text', text: /^✓ GPT second opinion on task 1 · done after 1m 2s$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('a broken gh or a failing read never freezes the pane', async ($, on) => {
+test('a slow gh, a failing read or a failing agent list never stops the clock or the refresh', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const world: World = { state: STACK_LATER, mtimeMs: 1, agents: [], nextTaskId: 'bg2', statuses: [], isGhBroken: true }
-  stubs(on, world)
+  const w = world({ gh: 'slow', nextTaskId: 'bg2' })
+  stubs(on, w, clock)
 
   await begin($)
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the api tests', run_in_background: true })
   await clock.advance(2000)
-  await clock.advance(30_000)
+  expect(await screen($)).toContain('● Run the api tests · running 2s')
 
-  expect(await shown($, '● Run the api tests · running 32s')).toBe(true)
-  expect(await shown($, '   PR #62')).toBe(false)
+  w.isReadBroken = true
+  w.isAgentListBroken = true
+  w.state = STACK_START
+  w.mtimeMs = 2
+  await clock.advance(10_000)
+  expect(await screen($)).toEqual(expect.arrayContaining(['● Run the api tests · running 12s', '▶ Task 2 — payment reissue']))
+
+  w.isReadBroken = false
+  await clock.advance(2000)
+  expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+})
+
+test('a read that never answers holds the refresh back for twenty seconds at most, and the clock not at all', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ nextTaskId: 'bg5' })
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the api tests', run_in_background: true })
+  w.hangingReads = 1
+  w.state = STACK_START
+  w.mtimeMs = 2
+  await clock.advance(12_000)
+  expect(await screen($)).toEqual(expect.arrayContaining(['● Run the api tests · running 12s', '▶ Task 2 — payment reissue']))
+
+  await clock.advance(12_000)
+  expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
 })
 
 test('a background command missing from the end-of-turn list has ended even without its notice', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const world: World = { state: STACK_LATER, mtimeMs: 1, agents: [], nextTaskId: 'bg3', statuses: [], isGhBroken: false }
-  stubs(on, world)
+  const w = world({ nextTaskId: 'bg3' })
+  stubs(on, w, clock)
 
   await begin($)
   await $.tool.call({ tool: 'Bash', command: 'npm run e2e', description: 'Run the e2e suite', run_in_background: true })
   await clock.advance(2000)
-  expect(await shown($, '● waiting on 1 background job')).toBe(false)
+  expect(await screen($)).toContain('● working')
 
   await $.turn.complete({ turnId: 't', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
-  expect(await shown($, '● waiting on 1 background job')).toBe(true)
+  expect(await screen($)).toContain('● waiting on 1 background job')
 
   await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
   await clock.advance(2000)
-  expect(await shown($, '● waiting for you')).toBe(true)
-  expect(await shown($, '1 finished · h shows them')).toBe(true)
+  expect(await screen($)).toEqual(expect.arrayContaining(['● waiting for you', '1 finished · h shows them']))
+})
+
+test('a subagent starting a turn does not make the main session look busy', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  stubs(on, world(), clock)
+
+  await begin($)
+  await $.turn.complete({ turnId: 't', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
+  await $.turn.start({ text: 'Review task 2', turnId: 't2', agentId: 'a1' })
+  expect(await screen($)).toContain('● waiting for you')
+})
+
+test('a subagent resumed under its id shows how long it has run since, not since its first run', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ agents: [{ id: 'a1', description: 'Review task 2', type: 'vision:code-reviewer', status: 'completed' }] })
+  stubs(on, w, clock)
+
+  await begin($)
+  await clock.advance(10_000)
+  w.agents = [{ ...w.agents[0]!, status: 'running' }]
+  await clock.advance(2000)
+  await clock.advance(4000)
+  expect(await screen($)).toContain('● vision:code-reviewer · Review task 2 · running 4s')
+})
+
+test('following the latest run again shows no run once none is left', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.command.run(command('attach ledger'))
+  w.files = []
+  await $.command.run(command('attach'))
+  expect(await screen($)).toEqual(['No vision run in this checkout yet.', ...CONTROLS])
+})
+
+test('after /clear an open pane keeps following the run', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  await $.classic.SessionStart({ source: 'clear' })
+  w.state = STACK_START
+  w.mtimeMs = 2
+  await clock.advance(2000)
+  expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+})
+
+test('a timer resizes the pane only while it is on screen and never opens it', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  expect(w.opens.length).toBe(1)
+
+  w.isPlaced = false
+  w.state = STACK_LATER.replace('## Log', '## [ ] Task 3: audit export\n\n## Log')
+  w.mtimeMs = 2
+  await clock.advance(4000)
+  expect(w.opens.length).toBe(1)
+
+  w.isPlaced = true
+  await clock.advance(2000)
+  expect(w.opens.length).toBe(2)
+  expect(w.opens[1]).toEqual({ id: 'vision-view', title: 'Vision', columns: 64, rows: (w.opens[0]?.rows ?? 0) + 1 })
 })
 
 test('minimized, the status line names the task, the step and the work running', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
-  const world: World = { state: STACK_LATER, mtimeMs: 1, agents: [], nextTaskId: 'bg4', statuses: [], isGhBroken: false }
-  stubs(on, world)
+  const w = world({ nextTaskId: 'bg4' })
+  stubs(on, w, clock)
 
   await begin($)
   await $.command.run(command('min'))
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests', run_in_background: true })
   await clock.advance(2000)
 
-  expect(world.statuses.at(-1)).toBe('vision · task 2/2 review · 1 running')
+  expect(w.statuses.at(-1)).toBe('vision · task 2/2 review · 1 running')
 })

@@ -37,18 +37,44 @@ export type Notice = { taskId: string; status: JobStatus }
 const tag = (text: string, name: string): string | undefined =>
   text.match(new RegExp(`<${name}>\\s*([^<]*?)\\s*</${name}>`))?.[1]
 
-// Claude Code tells the session a background task ended with a <task-notification> block naming its id and status.
-export const noticeOf = (text: string): Notice | undefined => {
-  const taskId = tag(text, 'task-id')
-  if (taskId === undefined || taskId === '') return undefined
+// Claude Code tells the session a background task ended with a <task-notification> block naming its id and status; one delivery can carry several.
+export const noticesOf = (text: string): Notice[] =>
+  text.split('<task-notification>').slice(1).flatMap(block => {
+    const taskId = tag(block, 'task-id')
+    return taskId === undefined || taskId === '' ? [] : [{ taskId, status: jobStatus(tag(block, 'status') ?? 'completed') }]
+  })
 
-  return { taskId, status: jobStatus(tag(text, 'status') ?? 'completed') }
+export const settle = (shells: readonly Shell[], notices: readonly Notice[], at: number): Shell[] =>
+  shells.map(shell => {
+    const notice = notices.find(one => one.taskId === shell.id)
+    return notice === undefined ? shell : { ...shell, status: notice.status, endedAt: shell.endedAt ?? at }
+  })
+
+// Only finished commands make room for new ones: a command still running stays listed however many start after it.
+export const keepShells = (shells: readonly Shell[], max: number): Shell[] => {
+  let excess = shells.length - max
+  return shells.filter(shell => {
+    if (excess <= 0 || isLive(shell)) return true
+    excess -= 1
+    return false
+  })
 }
 
-export const settle = (shells: readonly Shell[], notice: Notice, at: number): Shell[] =>
-  shells.map(shell =>
-    shell.id === notice.taskId ? { ...shell, status: notice.status, endedAt: shell.endedAt ?? at } : shell,
-  )
+export type AgentTimes = { started: Record<string, number>; ended: Record<string, number>; resumed: string[] }
+
+// A subagent resumed with SendMessage comes back under the same id, so its clock restarts when it runs again.
+export const agentTimes = (agents: readonly AgentRow[], ended: Readonly<Record<string, number>>, at: number): AgentTimes => {
+  const times: AgentTimes = { started: {}, ended: {}, resumed: [] }
+  for (const agent of agents) {
+    const live = isLive({ status: jobStatus(agent.status) })
+    if (live && ended[agent.id] !== undefined) {
+      times.resumed.push(agent.id)
+      times.started[agent.id] = at
+    }
+    if (!live && ended[agent.id] === undefined) times.ended[agent.id] = at
+  }
+  return times
+}
 
 // The end of each turn lists the background work still in flight; a command missing from it has ended, and its notice says how.
 export const reconcile = (shells: readonly Shell[], inFlight: ReadonlySet<string>, at: number): Shell[] =>

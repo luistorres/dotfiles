@@ -26,8 +26,14 @@ test('a stack reads each task from its heading, step line, fields and criteria, 
   expect(position(run)).toMatchObject({ index: 1, step: { label: 'review' } })
 })
 
-test('an empty PR field is no pull request', () => {
+test('an empty PR field is no pull request, and an empty field never takes the next line', () => {
+  const blankAbovePr = STACK_LATER.replace(
+    '- **PR:** https://github.com/example-org/ledger/pull/62',
+    '- **Implementer:**\n- **PR:** https://github.com/example-org/ledger/pull/62',
+  )
+
   expect(parseRun('docs/vision/b.md', STACK_START).tasks[0]?.pr).toBe(null)
+  expect(parseRun('docs/vision/b.md', blankAbovePr).tasks[0]?.pr).toBe('https://github.com/example-org/ledger/pull/62')
 })
 
 test('an issue set lists its issues without steps', () => {

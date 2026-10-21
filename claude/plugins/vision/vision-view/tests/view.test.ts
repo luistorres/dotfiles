@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Job } from '../types'
-import { backgroundTaskId, noticeOf, reconcile, settle, shellLabel } from '../hooks/jobs'
+import { agentTimes, backgroundTaskId, keepShells, noticesOf, reconcile, settle, shellLabel } from '../hooks/jobs'
 import { parseRun } from '../hooks/run'
 import { paneLines, safeHref, statusText, type Snapshot } from '../hooks/view'
 import { SINGLE, STACK_LATER, STACK_START } from './fixtures'
@@ -89,12 +89,17 @@ test('other runs in progress are mentioned, and no run at all says so', () => {
   expect(texts(snapshot({ run: parseRun('x', STACK_START) }))).toContain('0 of 2 tasks done · task 1 at review · standard risk')
 })
 
-test('a task notification names the background task and how it ended', () => {
-  const text = '<task-notification>\n<task-id>b7x</task-id>\n<tool-use-id>t1</tool-use-id>\n<status>failed</status>\n</task-notification>'
+test('a task notification names each background task it reports and how it ended', () => {
+  const one = '<task-notification>\n<task-id>b7x</task-id>\n<tool-use-id>t1</tool-use-id>\n<status>failed</status>\n</task-notification>'
+  const two = `${one}\n<task-notification><task-id>b8y</task-id><status>completed</status></task-notification>`
 
-  expect(noticeOf(text)).toEqual({ taskId: 'b7x', status: 'failed' })
-  expect(noticeOf('<task-notification><status>completed</status></task-notification>')).toBe(undefined)
-  expect(noticeOf('a message that only mentions <task-id>')).toBe(undefined)
+  expect(noticesOf(one)).toEqual([{ taskId: 'b7x', status: 'failed' }])
+  expect(noticesOf(two)).toEqual([
+    { taskId: 'b7x', status: 'failed' },
+    { taskId: 'b8y', status: 'done' },
+  ])
+  expect(noticesOf('<task-notification><status>completed</status></task-notification>')).toEqual([])
+  expect(noticesOf('a message that only mentions <task-id>')).toEqual([])
 })
 
 test('a background command ends by its notice, or by missing from the in-flight list at the end of a turn', () => {
@@ -103,12 +108,34 @@ test('a background command ends by its notice, or by missing from the in-flight 
     { ...job('two', 'running', 0), toolUseId: 't2' },
   ]
 
-  expect(settle(shells, { taskId: 'one', status: 'done' }, 50)[0]).toMatchObject({ status: 'done', endedAt: 50 })
+  expect(settle(shells, [{ taskId: 'one', status: 'done' }], 50)[0]).toMatchObject({ status: 'done', endedAt: 50 })
   expect(reconcile(shells, new Set(['two']), 60).map(shell => shell.status)).toEqual(['ended', 'running'])
-  expect(settle(reconcile(shells, new Set(), 60), { taskId: 'two', status: 'failed' }, 70)[1]).toMatchObject({
+  expect(settle(reconcile(shells, new Set(), 60), [{ taskId: 'two', status: 'failed' }], 70)[1]).toMatchObject({
     status: 'failed',
     endedAt: 60,
   })
+})
+
+test('only finished commands make room for new ones', () => {
+  const shells = [
+    { ...job('old', 'running', 0), toolUseId: 't1' },
+    { ...job('done', 'done', 1, 2), toolUseId: 't2' },
+    { ...job('new', 'running', 3), toolUseId: 't3' },
+  ]
+
+  expect(keepShells(shells, 2).map(shell => shell.id)).toEqual(['old', 'new'])
+  expect(keepShells(shells, 1).map(shell => shell.id)).toEqual(['old', 'new'])
+  expect(keepShells(shells, 5).length).toBe(3)
+})
+
+test('a subagent resumed under the same id starts its clock again', () => {
+  const agents = [
+    { id: 'a1', description: 'Review', type: 'vision:code-reviewer', status: 'running' },
+    { id: 'a2', description: 'Fix', type: 'general-purpose', status: 'completed' },
+  ]
+
+  expect(agentTimes(agents, {}, 10)).toEqual({ started: {}, ended: { a2: 10 }, resumed: [] })
+  expect(agentTimes(agents, { a1: 5, a2: 5 }, 20)).toEqual({ started: { a1: 20 }, ended: {}, resumed: ['a1'] })
 })
 
 test('a background command is labelled by its description, else its first line', () => {

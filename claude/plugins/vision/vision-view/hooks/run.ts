@@ -44,7 +44,7 @@ const subsection = (body: string, heading: string): string =>
 
 const fields = (body: string): Map<string, string> =>
   new Map(
-    [...body.matchAll(/^\s*- \*\*([^*]+?):\*\*\s*(.*)$/gm)].map(([, name, value]) => [name ?? '', (value ?? '').trim()]),
+    [...body.matchAll(/^[ \t]*- \*\*([^*]+?):\*\*[ \t]*(.*)$/gm)].map(([, name, value]) => [name ?? '', (value ?? '').trim()]),
   )
 
 const lastPullRequest = (text: string): string | null => [...text.matchAll(PULL_REQUEST)].at(-1)?.[0] ?? null
