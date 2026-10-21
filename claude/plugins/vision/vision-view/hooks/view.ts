@@ -129,7 +129,7 @@ const taskLines = (run: Run, prs: Snapshot['prs']): Line[] => {
   return run.tasks.flatMap((task, index) => {
     const isCurrent = current?.index === index
     const mark = task.isDone ? '✓' : isCurrent ? '▶' : '·'
-    const head = line(`${mark} ${task.title}`, task.isDone ? 'done' : isCurrent ? 'run' : 'dim', { isBold: isCurrent })
+    const head = line(`${mark} ${task.title}`, task.isDone ? 'done' : isCurrent ? 'plain' : 'dim', { isBold: isCurrent })
     if (run.shape === 'issues') return [head]
     if (isCurrent) {
       return [head, ...(task.steps.length === 0 ? [] : [stepLine(task.steps, '   ')]), ...criteriaLine(task, '   '), ...prLine(task, prs, '   ')]

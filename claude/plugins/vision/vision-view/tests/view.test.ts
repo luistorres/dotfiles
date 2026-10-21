@@ -65,7 +65,7 @@ test('anything in progress is one tone, success another, failure a third', () =>
   expect(tone('✓ job b')).toBe('done')
   expect(tone('✗ job c')).toBe('fail')
   expect(tone('✗ job d')).toBe('fail')
-  expect(tone('▶ Task 2')).toBe('run')
+  expect(tone('▶ Task 2')).toBe('plain')
   expect(tone('✓ Task 1')).toBe('done')
   expect(tone('● working')).toBe('run')
   expect(paneLines(snapshot({ jobs: [job('b', 'done', 0, 1)] })).find(line => line.text.includes('finished ·'))?.tone).toBe('done')
