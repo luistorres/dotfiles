@@ -135,15 +135,16 @@ These lines are what the tiers get tuned on.
 
 ## Reviewing someone else's PR
 
-1. Fetch it into a throwaway worktree: `git fetch origin pull/<n>/head` then
-   `git worktree add --detach <path> FETCH_HEAD`. BASE is the merge base with its target branch.
+1. Fetch it into a throwaway worktree, with hooks off so none of its files run:
+   `git fetch origin pull/<n>/head` then `git -c core.hooksPath=/dev/null worktree add --detach <path> FETCH_HEAD`.
+   BASE is the merge base with its target branch.
 2. Choose the risk, then prepare and dispatch as above, with the PR description standing in for the
    criteria.
 3. Check every critical and important yourself at its cited line and drop what does not hold. Minors
    pass through unchecked.
 4. Show the findings to the user and stop. Post only when asked, as one review object:
    `gh api repos/{owner}/{repo}/pulls/<n>/reviews --method POST --input review.json` with
-   `"event": "COMMENT"`. A finding on a changed line goes inline (`path`, `line`, `"side": "RIGHT"`,
+   `"event": "COMMENT"` and `"commit_id"` set to the head you reviewed. A finding on a changed line goes inline (`path`, `line`, `"side": "RIGHT"`,
    with the line confirmed against the diff); the rest go in the body as one-line bullets. Prefix
    each with its severity. Post only actionable findings, with no praise and no list of what was
    checked or refuted.

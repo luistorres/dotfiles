@@ -14,7 +14,7 @@
 - `gh`, logged in with `gh auth login`, plus the stack extension: `gh extension install github/gh-stack`.
 - `python3`, for the comment hook.
 - `npx`, for the projects whose lint and format commands use it.
-- Optionally, in `~/.zshrc.local`, models `claude --model` can reach:
+- Optionally, in `~/.zshrc.local`:
   - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for every plan review and as the second reviewer on standard- and high-risk changes. When it is unset, vision runs a Claude pass instead.
   - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on high-risk changes and plans. When it is unset, vision runs a Claude pass instead.
   - `VISION_CLONE_ROOTS`, the colon-separated directories under which `pr-watch` looks for local clones of the repositories whose pull requests request your review. It defaults to `~/projects`.
@@ -53,7 +53,7 @@ Run state lives in `docs/vision/` of the repository being worked on; `vision-vie
 
 This repo is public. The installer points `core.hooksPath` at `.githooks`, whose hooks block a commit when its added lines, file names or message contain a secret-shaped string, an absolute home path or a term listed in `.git/info/private-terms` (one per line, case-insensitive, never committed; a fresh clone starts without it, so add your own), and when it stages a `.DS_Store` file. Binary files aren't scanned.
 
-`claude/test.sh` tests the guard, the settings merge, vision's second-opinion script and PR gate, and the installer. Everything runs offline: a stand-in `claude` answers the second-opinion tests, and the installer tests run in a scratch home folder where the remote marketplaces and plugins are recorded rather than fetched. `claude plugin test claude/plugins/vision/vision-view` runs the pane's tests.
+`claude/test.sh` tests the guard, the settings merge, vision's second-opinion script, PR gate and pr-watch scan rules, and the installer. Everything runs offline: a stand-in `claude` answers the second-opinion tests, a stand-in `gh` answers the pr-watch tests, and the installer tests run in a scratch home folder where the remote marketplaces and plugins are recorded rather than fetched. `claude plugin test claude/plugins/vision/vision-view` runs the pane's tests.
 
 ## Not included
 

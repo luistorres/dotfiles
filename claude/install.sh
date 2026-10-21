@@ -5,7 +5,7 @@ SRC=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPO=$(dirname "$SRC")
 DEST=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 STAMP=$(date +%Y%m%d-%H%M%S)-$$
-SKILLS=(pr-create pr-jira pr-message pr-review-watch request-feedback-artifact stacked-prs visual-debrief)
+SKILLS=(pr-create pr-jira pr-message request-feedback-artifact stacked-prs visual-debrief)
 MCP_NAME=github_inline_comment
 LINKED=""
 BACKUPS=""

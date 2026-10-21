@@ -10,6 +10,8 @@ One pass: find the pull requests that request your review, skip what is already 
 each new one to its own `vision:pr-reviewer` agent. You only route work. A review's reading stays in
 its agent and is discarded with it, so a loop that runs all day stays cheap.
 
+The reviews it posts are yours: the author sees each one as your review of the pull request.
+
 ## A pass
 
 1. Run `pr-watch scan`, passing on `--dry-run`, `--seed` or `--force` if the arguments carry them.
@@ -31,14 +33,17 @@ Never schedule a wake-up: the loop is the heartbeat.
 ## What scan skips
 
 - Drafts, your own pull requests, and requests made to a team rather than to you.
-- A head already reviewed, by the watcher or by you; a new push gets one fresh review.
+- A head already reviewed, by the watcher or by you. A posted review, even a comment, takes you off
+  the PR's requested reviewers, so after the watcher posts, a new push is reviewed only once someone
+  requests you again. A clean review posts nothing and leaves the request in place.
 - A third automatic review of the same pull request: later pushes are recorded `capped`. `--force`
   lifts the cap and the head checks for one pass.
 - A repository with no local clone, recorded `skipped_not_cloned` and retried every pass. Clones are
   found one or two levels below each directory in `VISION_CLONE_ROOTS` (colon-separated, default
   `~/projects`), matched on their origin remote. Nothing is ever cloned for you.
 
-A failed review (`error`) is retried on the next pass and does not count toward the cap. `--seed`
+A failed review (`error`) is retried on the next passes, up to twice per head, and does not count
+toward the cap. `--seed`
 marks every pending request as seen without reviewing it; `--dry-run` reviews and prints, but posts
 nothing and writes no state. The state lives in `~/.claude/vision/pr-watch.json`
 (`VISION_PR_WATCH_STATE` overrides it).

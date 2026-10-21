@@ -154,7 +154,7 @@ test_merge_is_idempotent() {
 REAL_HOME=$HOME
 REAL_CLAUDE=$(command -v claude)
 export REAL_CLAUDE
-LINKED_PATHS="hooks/comment-lint.py commands/code-review.md skills/pr-create skills/pr-jira skills/pr-message skills/pr-review-watch skills/request-feedback-artifact skills/stacked-prs skills/visual-debrief"
+LINKED_PATHS="hooks/comment-lint.py commands/code-review.md skills/pr-create skills/pr-jira skills/pr-message skills/request-feedback-artifact skills/stacked-prs skills/visual-debrief"
 LOCAL_PLUGINS="vision@vision-local vision-view@vision-local agent-atlas@agent-atlas-local"
 REMOTE_MARKETPLACES="anthropics/claude-plugins-official pbakaus/impeccable warpdotdev/claude-code-warp DietrichGebert/ponytail"
 REMOTE_PLUGINS="frontend-design@claude-plugins-official mattpocock-skills@claude-plugins-official impeccable@impeccable warp@claude-code-warp ponytail@ponytail"
@@ -247,7 +247,8 @@ first_run_backups() {
 }
 
 skills_hold_only_links() {
-  [ "$(ls -A "$1/.claude/skills" | wc -l | tr -d ' ')" = 7 ] || { echo "extra entries in skills/:"; ls -A "$1/.claude/skills"; return 1; }
+  [ "$(ls -A "$1/.claude/skills" | wc -l | tr -d ' ')" = "$(tr ' ' '\n' <<< "$LINKED_PATHS" | grep -c '^skills/')" ] ||
+    { echo "extra entries in skills/:"; ls -A "$1/.claude/skills"; return 1; }
 }
 
 backed_up() { (cd "$1/.claude/dotfiles-backups" && find . -mindepth 2 -maxdepth 2 | sed 's|^\./[^/]*/||' | LC_ALL=C sort | xargs); }
@@ -448,7 +449,7 @@ watch_dir() {
 expr() { local prev=""; for a in "$@"; do [ "$prev" = --jq ] && { printf '%s' "$a"; return; }; prev=$a; done; }
 case "$1 $2" in
   "api user") echo me ;;
-  "search prs") jq -r "$(expr "$@")" "$STUB_DIR/search.json" ;;
+  "search prs") printf '%s\n' "$@" > "$STUB_DIR/search-args" && jq -r "$(expr "$@")" "$STUB_DIR/search.json" ;;
   "pr view") cat "$STUB_DIR/view-$3.json" ;;
   api\ repos/*/reviews) n=${2%/reviews} && jq -r "$(expr "$@")" "$STUB_DIR/reviews-${n##*/}.json" 2> /dev/null || true ;;
   *) echo "unexpected: gh $*" >&2 && exit 1 ;;
@@ -459,7 +460,7 @@ EOF
 
 requested() {
   jq --arg r "$2" --argjson n "$3" --arg author "${5:-someone}" --argjson draft "${6:-false}" \
-    '. + [{repository: {nameWithOwner: $r}, number: $n, isDraft: $draft, author: {login: $author}}]' \
+    'map(select(.number != $n)) + [{repository: {nameWithOwner: $r}, number: $n, isDraft: $draft, author: {login: $author}}]' \
     "$1/search.json" > "$1/search.new" && mv "$1/search.new" "$1/search.json" &&
     jq -n --arg head "$4" '{headRefOid: $head, baseRefOid: "b0", baseRefName: "main", title: "T", url: "u"}' > "$1/view-$3.json"
 }
@@ -480,7 +481,9 @@ test_vision_watch_lists_new_requests_with_their_clones() {
   d=$(watch_dir) && requested "$d" o/api 5 h5 && requested "$d" o/svc 6 h6 &&
     requested "$d" o/api 7 h7 me && requested "$d" o/api 8 h8 someone true &&
     clone_of "$d" app git@github.com:O/Api.git && mkdir "$d/projects/team" &&
-    clone_of "$d" team/svc https://github.com/o/svc && watch "$d" scan > "$d/out" 2> /dev/null &&
+    clone_of "$d" team/svc https://github.com/o/svc && clone_of "$d" mirror https://gitlab.com/o/svc &&
+    VISION_CLONE_ROOTS="::$d/projects" watch "$d" scan > "$d/out" 2> /dev/null &&
+    check grep -qx 'user-review-requested:@me' "$d/search-args" && check fails grep -q -- '--review-requested' "$d/search-args" &&
     check [ "$(wc -l < "$d/out")" -eq 2 ] &&
     check jq -e --arg c "$d/projects/app" 'select(.number == 5) | .key == "o/api#5" and .head == "h5" and .base == "b0"
       and .clone == $c' "$d/out" > /dev/null &&
@@ -497,9 +500,12 @@ test_vision_watch_skips_a_head_it_already_reviewed() {
 test_vision_watch_skips_a_head_the_owner_reviewed() {
   local d
   d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
-    echo '[{"user": {"login": "other"}, "commit_id": "h0"}, {"user": {"login": "me"}, "commit_id": "h1"}]' > "$d/reviews-5.json" &&
+    echo '[{"user": {"login": "other"}, "commit_id": "h1"}, {"user": {"login": "me"}, "commit_id": "h0"}]' > "$d/reviews-5.json" &&
+    watch "$d" scan --dry-run > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    echo '[{"user": {"login": "me"}, "commit_id": "h1"}]' > "$d/reviews-5.json" &&
     watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
-    check [ "$(watched "$d" 'o/api#5' outcome)" = already_reviewed ]
+    check [ "$(watched "$d" 'o/api#5' outcome)" = already_reviewed ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check [ -s "$d/out" ]
 }
 
 test_vision_watch_caps_automatic_reviews() {
@@ -534,6 +540,17 @@ test_vision_watch_counts_only_completed_reviews() {
     watch "$d" record 'o/api#5' posted h1 https://x/r1 && check [ "$(watched "$d" 'o/api#5' review_count)" -eq 1 ] &&
     check [ "$(watched "$d" 'o/api#5' review_url)" = https://x/r1 ] &&
     check fails watch "$d" record 'o/api#5' capped h1
+}
+
+test_vision_watch_retries_a_failed_review_twice_per_head() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' error h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    watch "$d" record 'o/api#5' error h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    requested "$d" o/api 5 h2 && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ] &&
+    watch "$d" record 'o/api#5' error h2 && check [ "$(watched "$d" 'o/api#5' errors)" -eq 1 ] &&
+    watch "$d" record 'o/api#5' clean h2 && check [ "$(watched "$d" 'o/api#5' errors)" = null ]
 }
 
 gate_repo() {
