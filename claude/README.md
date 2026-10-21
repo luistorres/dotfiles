@@ -14,7 +14,7 @@
 - `gh`, logged in with `gh auth login`, plus the stack extension: `gh extension install github/gh-stack`.
 - `python3`, for the comment hook.
 - `npx`, for the projects whose lint and format commands use it.
-- Optionally, in `~/.zshrc.local`:
+- Optionally, in `~/.zshrc.local` (each model a name `claude --model` can reach):
   - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for every plan review and as the second reviewer on standard- and high-risk changes. When it is unset, vision runs a Claude pass instead.
   - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on high-risk changes and plans. When it is unset, vision runs a Claude pass instead.
   - `VISION_CLONE_ROOTS`, the colon-separated directories under which `pr-watch` looks for local clones of the repositories whose pull requests request your review. It defaults to `~/projects`.

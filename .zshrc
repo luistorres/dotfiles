@@ -126,7 +126,7 @@ alias vim='nvim'
 alias p='pnpm'
 alias aaws='aws --cli-auto-prompt'
 alias awslogin='aws sso login --profile'
-alias prwatch='claude --model claude-sonnet-5-5 "/loop 30m run the pr-review-watch skill"'
+alias prwatch='claude --model claude-sonnet-5-5 "/loop 30m /vision:pr-watch"'
 
 export PATH=~/dotfiles/git_commands:$PATH
 

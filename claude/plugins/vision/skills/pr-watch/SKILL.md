@@ -42,11 +42,10 @@ Never schedule a wake-up: the loop is the heartbeat.
   found one or two levels below each directory in `VISION_CLONE_ROOTS` (colon-separated, default
   `~/projects`), matched on their origin remote. Nothing is ever cloned for you.
 
-A failed review (`error`) is retried on the next passes, up to twice per head, and does not count
-toward the cap. `--seed`
-marks every pending request as seen without reviewing it; `--dry-run` reviews and prints, but posts
-nothing and writes no state. The state lives in `~/.claude/vision/pr-watch.json`
-(`VISION_PR_WATCH_STATE` overrides it).
+A failed review (`error`) is tried at most twice per head, unless `--force`, and does not count
+toward the cap. `--seed` marks every pending request as seen without reviewing it; `--dry-run`
+reviews and prints, but posts nothing and writes no state. The state lives in
+`~/.claude/vision/pr-watch.json` (`VISION_PR_WATCH_STATE` overrides it).
 
 ## Running it
 

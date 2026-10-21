@@ -480,8 +480,8 @@ test_vision_watch_lists_new_requests_with_their_clones() {
   local d
   d=$(watch_dir) && requested "$d" o/api 5 h5 && requested "$d" o/svc 6 h6 &&
     requested "$d" o/api 7 h7 me && requested "$d" o/api 8 h8 someone true &&
-    clone_of "$d" app git@github.com:O/Api.git && mkdir "$d/projects/team" &&
-    clone_of "$d" team/svc https://github.com/o/svc && clone_of "$d" mirror https://gitlab.com/o/svc &&
+    clone_of "$d" app git@github.com-work:O/Api.git && mkdir "$d/projects/team" &&
+    clone_of "$d" team/svc https://github.com/o/svc &&
     VISION_CLONE_ROOTS="::$d/projects" watch "$d" scan > "$d/out" 2> /dev/null &&
     check grep -qx 'user-review-requested:@me' "$d/search-args" && check fails grep -q -- '--review-requested' "$d/search-args" &&
     check [ "$(wc -l < "$d/out")" -eq 2 ] &&

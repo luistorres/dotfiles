@@ -27,9 +27,8 @@ put() {
     mv "$tmp" "$state" || { rm -f "$tmp"; return 1; }
 }
 
-github_repo() {
+owner_repo() {
   local url=${1%/}
-  case $url in *github.com[:/]*) ;; *) return 1 ;; esac
   url=${url%.git}
   local repo=${url##*/}
   url=${url%/*}
@@ -46,7 +45,7 @@ find_clone() {
     for dir in "$root"/*/ "$root"/*/*/; do
       [ -e "$dir.git" ] || continue
       url=$(git -C "$dir" remote get-url origin 2> /dev/null) || continue
-      [ "$(github_repo "$url")" = "$want" ] && { printf '%s\n' "${dir%/}"; return 0; }
+      [ "$(owner_repo "$url")" = "$want" ] && { printf '%s\n' "${dir%/}"; return 0; }
     done
   done
   return 1
