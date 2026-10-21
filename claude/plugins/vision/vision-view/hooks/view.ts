@@ -72,7 +72,7 @@ export const attentionLine = (snapshot: Snapshot): Line | undefined => {
   const { run } = snapshot
   if (run === null) return undefined
   if (isFinished(run)) return line('✓ finished', 'done')
-  if (snapshot.attention === 'asking') return line('● waiting for you: a question or a permission prompt', 'wait')
+  if (snapshot.attention === 'asking') return line('● waiting for your answer', 'wait')
   if (snapshot.attention === 'working') return line('● working', 'run')
 
   const live = snapshot.jobs.filter(isLive).length
@@ -148,18 +148,21 @@ const jobLine = (job: Job, now: number): Line => {
   return line(`${JOB_MARK[job.status]} ${oneLine(job.label, 44)} · ${time}`, JOB_TONE[job.status])
 }
 
+const tallyLine = (hidden: readonly Job[], isShowing: boolean): Line[] => {
+  if (hidden.length === 0) return []
+
+  const failed = hidden.filter(job => job.status === 'failed' || job.status === 'stopped').length
+  const text = `${hidden.length} ${isShowing ? 'earlier ' : ''}finished${failed > 0 ? `, ${failed} failed or stopped` : ''}`
+  return [line(isShowing ? text : `${text} · h shows them`, failed > 0 ? 'fail' : 'dim')]
+}
+
 const jobLines = (snapshot: Snapshot): Line[] => {
   const live = snapshot.jobs.filter(isLive)
   const finished = snapshot.jobs.filter(job => !isLive(job))
-  const failed = finished.filter(job => job.status === 'failed' || job.status === 'stopped').length
-  const shown = snapshot.isShowingFinished ? finished.slice(-FINISHED_SHOWN) : []
-  const hidden = finished.length - shown.length
-  const tally =
-    hidden === 0
-      ? []
-      : [line(`${hidden} finished${failed > 0 ? `, ${failed} failed or stopped` : ''} · h shows them`, failed > 0 ? 'fail' : 'dim')]
-
   if (live.length === 0 && finished.length === 0) return []
+
+  const shown = snapshot.isShowingFinished ? finished.slice(-FINISHED_SHOWN) : []
+  const tally = tallyLine(finished.slice(0, finished.length - shown.length), shown.length > 0)
 
   return [
     line('Running', 'plain', { isBold: true }),

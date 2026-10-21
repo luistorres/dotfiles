@@ -6,7 +6,6 @@ export type Task = {
   steps: Check[]
   criteria: Check[]
   pr: string | null
-  branch: string
 }
 
 export type Shape = 'single' | 'stack' | 'issues'
@@ -32,15 +31,12 @@ export type Job = {
   endedAt: number | null
 }
 
-export type Shell = Job & { toolUseId: string }
-
 export type PrStatus = {
   state: string
   isDraft: boolean
   passed: number
   failed: number
   pending: number
-  fetchedAt: number
 }
 
 export type Mode = 'closed' | 'pane' | 'line'
@@ -53,7 +49,7 @@ declare module 'claude-code' {
       pinned: string | null
       run: Run | null
       otherRuns: number
-      shells: Shell[]
+      shells: Job[]
       agents: Job[]
       spawnedAt: Record<string, number>
       endedAt: Record<string, number>

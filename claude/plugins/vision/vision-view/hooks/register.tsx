@@ -14,6 +14,7 @@ const PANE = 'vision-view'
 const STATE_DIR = 'docs/vision'
 const TICK_MS = 2000
 const STUCK_MS = 20_000
+const COMMAND_WAIT_MS = 3000
 const PR_STALE_MS = 60_000
 const MAX_ROWS = 40
 const JOBS_KEPT = 40
@@ -48,45 +49,50 @@ const mainCheckout = async ($: $): Promise<string> => {
   const known = await read($, checkoutAtom)
   if (known !== null) return known
 
-  const git = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeoutMs: 5000 })
-  const checkout = git.exitCode === 0 ? git.stdout.trim().replace(/\/\.git\/?$/, '') : await $.session.cwd()
+  const git = await $.process
+    .run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeoutMs: 5000 })
+    .catch(() => undefined)
+  if (git?.exitCode !== 0) return $.session.cwd()
+
+  const checkout = git.stdout.trim().replace(/\/\.git\/?$/, '')
   await update($, checkoutAtom, () => checkout)
   return checkout
 }
 
 const stateFiles = async ($: $, checkout: string) =>
-  (await $.fs.list(`${checkout}/${STATE_DIR}`).catch(() => [])).filter(
-    entry => entry.kind === 'file' && entry.name.endsWith('.md'),
-  )
+  (await $.fs.list(`${checkout}/${STATE_DIR}`)).filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
 
-const loadRun = async ($: $, checkout: string, path: string, mtimeMs: number): Promise<Run | undefined> => {
+const isCurrent = (at: number) => refreshingSince === at
+
+const loadRun = async ($: $, checkout: string, path: string, mtimeMs: number, at: number): Promise<Run | undefined> => {
   const cached = parsed.get(path)
   if (cached?.mtimeMs === mtimeMs) return cached.run
 
   try {
     const run = parseRun(path, await $.fs.read(`${checkout}/${path}`))
-    parsed.set(path, { mtimeMs, run })
+    if (isCurrent(at)) parsed.set(path, { mtimeMs, run })
     return run
   } catch {
     return cached?.run
   }
 }
 
-const loadRuns = async ($: $, checkout: string): Promise<Candidate[]> => {
+const loadRuns = async ($: $, checkout: string, at: number): Promise<Candidate[]> => {
   const candidates: Candidate[] = []
   for (const { name, mtimeMs } of await stateFiles($, checkout)) {
     const path = `${STATE_DIR}/${name}`
-    const run = await loadRun($, checkout, path, mtimeMs)
+    const run = await loadRun($, checkout, path, mtimeMs, at)
     if (run !== undefined) candidates.push({ path, mtimeMs, run })
   }
 
   return candidates
 }
 
-const refreshRun = async ($: $) => {
-  const candidates = await loadRuns($, await mainCheckout($))
+const refreshRun = async ($: $, at: number) => {
+  const candidates = await loadRuns($, await mainCheckout($), at)
   const { chosen, others } = pick(candidates, await read($, pinnedAtom), await read($, sessionStartedAtAtom))
   const run = chosen?.run ?? null
+  if (!isCurrent(at)) return
 
   await update($, otherRunsAtom, () => others)
   if (run === shownRun) return
@@ -96,6 +102,8 @@ const refreshRun = async ($: $) => {
 
 const refreshAgents = async ($: $, at: number) => {
   const agents = await $.agent.list()
+  if (!isCurrent(at)) return
+
   const known = await read($, agentsAtom)
   const times = agentTimes(agents, known, await read($, endedAtAtom), at)
   const spawnedAt = await update($, spawnedAtAtom, map => ({ ...map, ...times.started }))
@@ -137,16 +145,16 @@ const clearStatusLine = ($: $) => {
   $.ui.status(undefined)
 }
 
+// A refresh overtaken by a newer one, after a stall or by a command, writes nothing.
 const refresh = async ($: $, at: number) => {
   refreshingSince = at
   try {
-    await refreshRun($).catch(() => {
+    await refreshRun($, at).catch(() => {
       shownRun = undefined
     })
     await refreshAgents($, at).catch(() => undefined)
-    await refreshStatusLine($).catch(() => undefined)
   } finally {
-    if (refreshingSince === at) refreshingSince = null
+    if (isCurrent(at)) refreshingSince = null
   }
 }
 
@@ -154,7 +162,11 @@ const refreshNow = async ($: $) => {
   const at = await $.clock.now()
   await update($, nowAtom, () => at)
   await refresh($, at)
+  await refreshStatusLine($).catch(() => undefined)
 }
+
+// A hook waits on a refresh only briefly, so a read that never answers holds up no command.
+const refreshForCommand = ($: $) => Promise.race([refreshNow($).catch(() => undefined), $.clock.sleep(COMMAND_WAIT_MS)])
 
 const fetchPrs = async ($: $, at: number) => {
   isFetchingPrs = true
@@ -166,7 +178,7 @@ const fetchPrs = async ($: $, at: number) => {
     for (const url of due) {
       prCheckedAt.set(url, at)
       const view = await $.process.run(['gh', 'pr', 'view', url, '--json', 'state,isDraft,statusCheckRollup'], { timeoutMs: 15_000 })
-      const status = view.exitCode === 0 ? prStatusFrom(view.stdout, at) : undefined
+      const status = view.exitCode === 0 ? prStatusFrom(view.stdout) : undefined
       if (status !== undefined) await update($, prsAtom, prs => ({ ...prs, [url]: status }))
     }
   } finally {
@@ -193,7 +205,7 @@ const advance = async ($: $) => {
   const at = await $.clock.now()
   await update($, nowAtom, () => at)
   if (refreshingSince === null || at - refreshingSince > STUCK_MS) void refresh($, at)
-  if (mode !== 'pane') return
+  if (mode === 'line') return refreshStatusLine($)
 
   if (!isFetchingPrs) void fetchPrs($, at).catch(() => undefined)
   await fitPane($)
@@ -202,21 +214,21 @@ const advance = async ($: $) => {
 const openPane = async ($: $): Promise<string> => {
   await update($, modeAtom, () => 'pane')
   clearStatusLine($)
-  await refreshNow($)
+  await refreshForCommand($)
   openedRows = await paneRows($)
   const placed = await $.ui.open({ id: PANE, title: 'Vision', focus: true, columns: 64, rows: openedRows })
   if (placed.isPlaced) return 'Vision view opened.'
 
   await $.ui.close({ id: PANE })
   await update($, modeAtom, () => 'line')
-  await refreshNow($)
+  await refreshStatusLine($)
   return `The vision pane could not be placed (${placed.reason}), so the view shows in the status line instead.`
 }
 
 const minimize = async ($: $) => {
   await update($, modeAtom, () => 'line')
   await $.ui.close({ id: PANE })
-  await refreshNow($)
+  await refreshStatusLine($)
 }
 
 const closeAll = async ($: $): Promise<string> => {
@@ -234,11 +246,11 @@ const attach = async ($: $, query: string): Promise<string> => {
   if (query === '') {
     await update($, pinnedAtom, () => null)
     shownRun = undefined
-    await refreshNow($)
+    await refreshForCommand($)
     return 'Vision view follows the run edited last again.'
   }
 
-  const names = (await stateFiles($, await mainCheckout($)))
+  const names = (await stateFiles($, await mainCheckout($)).catch(() => []))
     .filter(entry => entry.name.includes(query))
     .map(entry => `${STATE_DIR}/${entry.name}`)
   if (names.length !== 1) {
@@ -249,7 +261,7 @@ const attach = async ($: $, query: string): Promise<string> => {
 
   await update($, pinnedAtom, () => names[0] ?? null)
   shownRun = undefined
-  await refreshNow($)
+  await refreshForCommand($)
   return `Vision view attached to ${names[0]}.`
 }
 
@@ -339,15 +351,16 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // /clear, /resume and /branch put every $.state value back to its default but leave the pane and the status line up.
+  // /clear, /resume and /branch put every $.state value back to its default but leave the pane up.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     const isPaneOpen = (await $.ui.panes()).some(one => one.id === PANE)
-    await update($, modeAtom, () => (isPaneOpen ? 'pane' : shownStatus === '' ? 'closed' : 'line'))
+    await update($, modeAtom, () => (isPaneOpen ? 'pane' : 'closed'))
+    if (!isPaneOpen) clearStatusLine($)
     const at = await $.clock.now()
     await update($, sessionStartedAtAtom, () => at)
     shownRun = undefined
-    shownStatus = ''
-    await refreshNow($)
+    prCheckedAt.clear()
+    void refreshNow($).catch(() => undefined)
 
     return next(e)
   })
@@ -371,22 +384,13 @@ export const register: Register = on => {
     }
   })
 
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-    const id = e.tool_use_id
-    if (verdict.decision === 'ask' && id !== undefined) await update($, askingAtom, ids => [...ids, id])
-
-    return verdict
-  })
-
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
     const taskId = backgroundTaskId(ran.result)
-    if (taskId !== undefined) {
+    if (taskId !== undefined && e.agentId === undefined) {
       const at = await $.clock.now()
       const shell = {
         id: taskId,
-        toolUseId: e.tool_use_id,
         label: shellLabel(e.description, e.command),
         status: 'running' as const,
         startedAt: at,
@@ -401,7 +405,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     if (VISION_SKILL.test(e.skill) && (await read($, modeAtom)) === 'closed') {
       await update($, modeAtom, () => 'line')
-      await refreshNow($)
+      void refreshNow($).catch(() => undefined)
     }
 
     return next(e)

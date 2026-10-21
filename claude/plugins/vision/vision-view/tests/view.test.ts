@@ -4,7 +4,7 @@ import type { Job } from '../types'
 import { agentJobs, agentTimes, backgroundTaskId, keepJobs, noticesOf, reconcile, settle, shellLabel } from '../hooks/jobs'
 import { parseRun } from '../hooks/run'
 import { paneLines, safeHref, statusText, type Snapshot } from '../hooks/view'
-import { SINGLE, STACK_LATER, STACK_START } from './fixtures'
+import { ISSUES, SINGLE, STACK_LATER, STACK_START } from './fixtures'
 
 const job = (id: string, status: Job['status'], startedAt: number | null, endedAt: number | null = null): Job => ({
   id,
@@ -52,13 +52,29 @@ test('running work shows how long it has run, and finished work collapses into a
   )
 })
 
+test('finished jobs beyond the ones shown are counted as earlier ones, with their own failures', () => {
+  const jobs = Array.from({ length: 10 }, (_, index) => job(`f${index}`, index === 0 ? 'failed' : 'done', 0, 1000))
+
+  expect(texts(snapshot({ jobs, isShowingFinished: true }))).toContain('2 earlier finished, 1 failed or stopped')
+  expect(texts(snapshot({ jobs: jobs.slice(1), isShowingFinished: true }))).toContain('1 earlier finished')
+  expect(texts(snapshot({ jobs }))).toContain('10 finished, 1 failed or stopped · h shows them')
+})
+
+test('an issue set lists each issue with the next one marked', () => {
+  const text = texts(snapshot({ run: parseRun('docs/vision/c.md', ISSUES), attention: 'idle' }))
+
+  expect(text).toEqual(
+    expect.arrayContaining(['vision · Onboarding checklist', '1 of 2 issues done', '✓ 1. Invite flow', '▶ 2. Welcome email']),
+  )
+})
+
 test('the attention line separates working, waiting for you and waiting on background work', () => {
   const live = [job('a', 'running', 0)]
 
   expect(texts(snapshot({ attention: 'working' }))).toContain('● working')
   expect(texts(snapshot({ attention: 'idle' }))).toContain('● waiting for you')
   expect(texts(snapshot({ attention: 'idle', jobs: live }))).toContain('● waiting on 1 background job')
-  expect(texts(snapshot({ attention: 'asking', jobs: live }))).toContain('● waiting for you: a question or a permission prompt')
+  expect(texts(snapshot({ attention: 'asking', jobs: live }))).toContain('● waiting for your answer')
   expect(texts(snapshot({ run: parseRun('x', STACK_LATER.replace('Status: in_progress', 'Status: done')) }))).toContain('✓ finished')
 })
 
@@ -103,10 +119,7 @@ test('a task notification names each background task it reports and how it ended
 })
 
 test('a background command ends by its notice, or by missing from the in-flight list at the end of a turn', () => {
-  const shells = [
-    { ...job('one', 'running', 0), toolUseId: 't1' },
-    { ...job('two', 'running', 0), toolUseId: 't2' },
-  ]
+  const shells = [job('one', 'running', 0), job('two', 'running', 0)]
 
   expect(settle(shells, [{ taskId: 'one', status: 'done' }], 50)[0]).toMatchObject({ status: 'done', endedAt: 50 })
   expect(reconcile(shells, new Set(['two']), 60).map(shell => shell.status)).toEqual(['ended', 'running'])
@@ -117,11 +130,7 @@ test('a background command ends by its notice, or by missing from the in-flight 
 })
 
 test('only finished commands make room for new ones', () => {
-  const shells = [
-    { ...job('old', 'running', 0), toolUseId: 't1' },
-    { ...job('done', 'done', 1, 2), toolUseId: 't2' },
-    { ...job('new', 'running', 3), toolUseId: 't3' },
-  ]
+  const shells = [job('old', 'running', 0), job('done', 'done', 1, 2), job('new', 'running', 3)]
 
   expect(keepJobs(shells, 2).map(shell => shell.id)).toEqual(['old', 'new'])
   expect(keepJobs(shells, 1).map(shell => shell.id)).toEqual(['old', 'new'])

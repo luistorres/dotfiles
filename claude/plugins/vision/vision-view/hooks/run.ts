@@ -60,7 +60,6 @@ const stackTask = (section: Section): Task | undefined => {
     steps: checks(stepLine(section.body)),
     criteria: items(subsection(section.body, 'Acceptance criteria')),
     pr: lastPullRequest(recorded.get('PR') ?? ''),
-    branch: recorded.get('Branch') ?? '',
   }
 }
 
@@ -70,19 +69,19 @@ const issue = (check: Check): Task => ({
   steps: [],
   criteria: [],
   pr: null,
-  branch: '',
 })
 
-const singleTask = (title: string, text: string, all: Section[], meta: Map<string, string>): Task => {
-  const steps = checks(stepLine(all.find(one => /^steps$/i.test(one.heading))?.body ?? ''))
+const body = (all: readonly Section[], heading: RegExp): string => all.find(one => heading.test(one.heading))?.body ?? ''
+
+const singleTask = (title: string, all: readonly Section[]): Task => {
+  const steps = checks(stepLine(body(all, /^steps$/i)))
 
   return {
     title,
     isDone: steps.length > 0 && steps.every(step => step.isDone),
     steps,
-    criteria: items(all.find(one => /^acceptance criteria$/i.test(one.heading))?.body ?? ''),
-    pr: lastPullRequest(text),
-    branch: meta.get('Branch') ?? '',
+    criteria: items(body(all, /^acceptance criteria$/i)),
+    pr: lastPullRequest(body(all, /^log$/i)),
   }
 }
 
@@ -94,7 +93,7 @@ export const parseRun = (path: string, raw: string): Run => {
   const all = sections(text)
   const title = text.match(/^# (.+)$/m)?.[1]?.trim() ?? path.split('/').at(-1) ?? path
   const stack = all.flatMap(one => stackTask(one) ?? [])
-  const issues = items(all.find(one => /^issues$/i.test(one.heading))?.body ?? '').map(issue)
+  const issues = items(body(all, /^issues$/i)).map(issue)
   const declared = meta.get('Shape')
   const shape: Shape =
     declared === 'stack' || declared === 'issues' || declared === 'single'
@@ -104,8 +103,8 @@ export const parseRun = (path: string, raw: string): Run => {
         : issues.length > 0
           ? 'issues'
           : 'single'
-  const tasks = shape === 'stack' ? stack : shape === 'issues' ? issues : [singleTask(title, text, all, meta)]
-  const log = [...(all.find(one => /^log$/i.test(one.heading))?.body ?? '').matchAll(/^- (.+)$/gm)].map(([, line]) =>
+  const tasks = shape === 'stack' ? stack : shape === 'issues' ? issues : [singleTask(title, all)]
+  const log = [...body(all, /^log$/i).matchAll(/^- (.+)$/gm)].map(([, line]) =>
     (line ?? '').replace(dated, '').trim(),
   )
 
@@ -144,7 +143,7 @@ export const pick = (
 ): { chosen: Candidate | undefined; others: number } => {
   const runs = candidates.filter(one => one.run.status !== '').sort((a, b) => b.mtimeMs - a.mtimeMs)
   const active = runs.filter(one => one.run.status === 'in_progress')
-  const chosen = runs.find(one => one.path === pinned) ?? active[0] ?? runs.find(one => one.mtimeMs >= since)
+  const chosen = candidates.find(one => one.path === pinned) ?? active[0] ?? runs.find(one => one.mtimeMs >= since)
 
   return { chosen, others: active.filter(one => one !== chosen).length }
 }

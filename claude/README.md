@@ -53,7 +53,7 @@ Run state lives in `docs/vision/` of the repository being worked on. `/vision-vi
 
 This repo is public. The installer points `core.hooksPath` at `.githooks`, whose hooks block a commit when its added lines, file names or message contain a secret-shaped string, an absolute home path or a term listed in `.git/info/private-terms` (one per line, case-insensitive, never committed; a fresh clone starts without it, so add your own), and when it stages a `.DS_Store` file. Binary files aren't scanned.
 
-`claude/test.sh` tests the guard, the settings merge, vision's second-opinion script, PR gate and pr-watch scan rules, and the installer. Everything runs offline: a stand-in `claude` answers the second-opinion tests, a stand-in `gh` answers the pr-watch tests, and the installer tests run in a scratch home folder where the remote marketplaces and plugins are recorded rather than fetched. `claude plugin test claude/plugins/vision/vision-view` runs the pane's tests.
+`claude/test.sh` tests the guard, the settings merge, vision's second-opinion script, PR gate and pr-watch scan rules, and the installer, and validates and tests the vision-view mod with the installed `claude`. Everything runs offline: a stand-in `claude` answers the second-opinion tests, a stand-in `gh` answers the pr-watch tests, and the installer tests run in a scratch home folder where the remote marketplaces and plugins are recorded rather than fetched.
 
 ## Not included
 

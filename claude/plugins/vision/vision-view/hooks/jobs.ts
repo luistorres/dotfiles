@@ -1,4 +1,4 @@
-import type { Job, JobStatus, Shell } from '../types'
+import type { Job, JobStatus } from '../types'
 
 export type AgentRow = { id: string; description: string; type: string; status: string }
 
@@ -44,7 +44,7 @@ export const noticesOf = (text: string): Notice[] =>
     return taskId === undefined || taskId === '' ? [] : [{ taskId, status: jobStatus(tag(block, 'status') ?? 'completed') }]
   })
 
-export const settle = (shells: readonly Shell[], notices: readonly Notice[], at: number): Shell[] =>
+export const settle = (shells: readonly Job[], notices: readonly Notice[], at: number): Job[] =>
   shells.map(shell => {
     const notice = notices.find(one => one.taskId === shell.id)
     return notice === undefined ? shell : { ...shell, status: notice.status, endedAt: shell.endedAt ?? at }
@@ -101,7 +101,7 @@ export const agentJobs = (
 }
 
 // The end of each turn lists the background work still in flight; a command missing from it has ended, and its notice says how.
-export const reconcile = (shells: readonly Shell[], inFlight: ReadonlySet<string>, at: number): Shell[] =>
+export const reconcile = (shells: readonly Job[], inFlight: ReadonlySet<string>, at: number): Job[] =>
   shells.map(shell =>
     isLive(shell) && !inFlight.has(shell.id) ? { ...shell, status: 'ended', endedAt: at } : shell,
   )

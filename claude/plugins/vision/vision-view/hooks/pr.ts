@@ -15,7 +15,7 @@ const verdict = (check: Check): 'passed' | 'failed' | 'pending' => {
   return 'failed'
 }
 
-export const prStatusFrom = (json: string, at: number): PrStatus | undefined => {
+export const prStatusFrom = (json: string): PrStatus | undefined => {
   try {
     const view = JSON.parse(json) as GhPrView
     const checks = (view.statusCheckRollup ?? []).map(verdict)
@@ -26,7 +26,6 @@ export const prStatusFrom = (json: string, at: number): PrStatus | undefined => 
       passed: checks.filter(one => one === 'passed').length,
       failed: checks.filter(one => one === 'failed').length,
       pending: checks.filter(one => one === 'pending').length,
-      fetchedAt: at,
     }
   } catch {
     return undefined

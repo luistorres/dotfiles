@@ -1,7 +1,7 @@
 import type { AgentInfo } from 'claude-code'
 import { expect, mock, test, type Engine, type TestBody } from 'claude-code/testing'
 
-import { STACK_LATER, STACK_START } from './fixtures'
+import { ISSUES, STACK_LATER, STACK_START } from './fixtures'
 
 const PANE = {
   plugin: 'vision-view',
@@ -32,12 +32,17 @@ type World = {
   statuses: (string | undefined)[]
   opens: { rows?: number; focus?: true }[]
   isPlaced: boolean
+  isPaneListed: boolean
   canPlace: boolean
   closes: number
-  gh: 'ok' | 'broken' | 'slow'
+  gh: 'ok' | 'slow'
+  isGitBroken: boolean
+  listed: string[]
+  isListBroken: boolean
   isReadBroken: boolean
   hangingReads: number
   isAgentListBroken: boolean
+  answer: Promise<void>
 }
 
 const world = (over: Partial<World> = {}): World => ({
@@ -49,12 +54,17 @@ const world = (over: Partial<World> = {}): World => ({
   statuses: [],
   opens: [],
   isPlaced: true,
+  isPaneListed: true,
   canPlace: true,
   closes: 0,
   gh: 'ok',
+  isGitBroken: false,
+  listed: [],
+  isListBroken: false,
   isReadBroken: false,
   hangingReads: 0,
   isAgentListBroken: false,
+  answer: Promise.resolve(),
   ...over,
 })
 
@@ -62,25 +72,31 @@ const ran = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', isStdoutTrun
 
 const stubs = (on: On, world: World, clock: Clock) => {
   on('session.start', () => ({ cwd: '/repo' }))
+  on('session.cwd', () => ({ value: '/repo/.worktrees/export' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('process.run', async ($, e) => {
-    if (e.argv[0] === 'git') return { value: ran('/repo/.git\n') }
-    if (world.gh === 'broken') return { deny: 'gh is not installed' }
+    if (e.argv[0] === 'git') return world.isGitBroken ? { deny: 'git is not installed' } : { value: ran('/repo/.git\n') }
     if (world.gh === 'slow') await clock.sleep(60_000)
     return { value: ran(JSON.stringify({ state: 'OPEN', isDraft: true, statusCheckRollup: [{ conclusion: 'SUCCESS' }] })) }
   })
-  on('fs.list', () => ({
-    value: [
-      ...world.files.map(name => ({ name, kind: 'file' as const, size: 1, isLink: false, mtimeMs: world.mtimeMs })),
-      { name: 'plans', kind: 'dir' as const, size: 0, isLink: false, mtimeMs: 0 },
-    ],
-  }))
+  on('fs.list', ($, e) => {
+    world.listed.push(e.path ?? '')
+    return world.isListBroken
+      ? { deny: 'the disk is busy' }
+      : {
+          value: [
+            ...world.files.map(name => ({ name, kind: 'file' as const, size: 1, isLink: false, mtimeMs: world.mtimeMs })),
+            { name: 'plans', kind: 'dir' as const, size: 0, isLink: false, mtimeMs: 0 },
+          ],
+        }
+  })
   on('fs.read', async () => {
+    const answer = world.isReadBroken ? { deny: 'the disk is busy' } : { value: world.state }
     if (world.hangingReads > 0) {
       world.hangingReads -= 1
       await clock.sleep(600_000)
     }
-    return world.isReadBroken ? { deny: 'the disk is busy' } : { value: world.state }
+    return answer
   })
   on('agent.list', () => (world.isAgentListBroken ? { deny: 'no agents here' } : { value: world.agents }))
   on('ui.open', ($, e) => {
@@ -91,19 +107,24 @@ const stubs = (on: On, world: World, clock: Clock) => {
     world.closes += 1
     return { value: undefined }
   })
-  on('ui.panes', () => ({ value: [{ id: 'vision-view', title: 'Vision', isShown: true, isFocused: true, isPlaced: world.isPlaced }] }))
+  on('ui.panes', () => ({
+    value: world.isPaneListed ? [{ id: 'vision-view', title: 'Vision', isShown: true, isFocused: true, isPlaced: world.isPlaced }] : [],
+  }))
   on('ui.status', ($, e) => {
     world.statuses.push(e.text)
     return { value: undefined }
   })
-  on('tool.call', ($, e) =>
-    e.tool === 'Bash' && e.run_in_background === true
+  on('tool.call', async ($, e) => {
+    if (e.tool === 'AskUserQuestion') await world.answer
+    return e.tool === 'Bash' && e.run_in_background === true
       ? { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: world.nextTaskId } }
-      : { result: { stdout: '', stderr: '', interrupted: false } },
-  )
+      : { result: { stdout: '', stderr: '', interrupted: false } }
+  })
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('classic.Stop', () => ({}))
   on('classic.SessionStart', () => ({}))
+  on('classic.PermissionRequest', () => ({}))
+  on('tool.check', () => ({ decision: 'ask' }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
 }
@@ -215,9 +236,48 @@ test('a slow gh, a failing read or a failing agent list never stops the clock or
   await clock.advance(10_000)
   expect(await screen($)).toEqual(expect.arrayContaining(['● Run the api tests · running 12s', '▶ Task 2 — payment reissue']))
 
+  w.isListBroken = true
+  await clock.advance(2000)
+  expect(await screen($)).toContain('▶ Task 2 — payment reissue')
+
+  w.isListBroken = false
   w.isReadBroken = false
   await clock.advance(2000)
   expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+})
+
+for (const failing of ['isReadBroken', 'isListBroken'] as const) {
+  test(`a refresh overtaken by a newer one never puts older progress back on screen (${failing})`, async ($, on) => {
+    const clock = mock.clock(on, { now: 0 })
+    const w = world()
+    stubs(on, w, clock)
+
+    await begin($)
+    w.hangingReads = 1
+    w.state = STACK_START
+    w.mtimeMs = 2
+    await clock.advance(12_000)
+    w.state = ISSUES
+    w.mtimeMs = 3
+    await clock.advance(12_000)
+    expect(await screen($)).toContain('vision · Onboarding checklist')
+
+    w[failing] = true
+    await clock.advance(600_000)
+    expect(await screen($)).toContain('vision · Onboarding checklist')
+  })
+}
+
+test('a read that never answers holds up neither the command nor the vision skill', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ hangingReads: 2 })
+  stubs(on, w, clock)
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  await $.tool.call({ tool: 'Skill', skill: 'vision:vision' })
+  const opening = $.command.run(command(''))
+  await clock.advance(3000)
+  expect(await opening).toMatchObject({ text: 'Vision view opened.' })
 })
 
 test('a read that never answers holds the refresh back for twenty seconds at most, and the clock not at all', async ($, on) => {
@@ -235,6 +295,20 @@ test('a read that never answers holds the refresh back for twenty seconds at mos
 
   await clock.advance(12_000)
   expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+})
+
+test('without git the runs are read from the session folder, and git is asked again until it answers', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ isGitBroken: true })
+  stubs(on, w, clock)
+
+  await begin($)
+  expect(await screen($)).toContain('▶ Task 2 — payment reissue')
+  expect(w.listed.at(-1)).toBe('/repo/.worktrees/export/docs/vision')
+
+  w.isGitBroken = false
+  await clock.advance(2000)
+  expect(w.listed.at(-1)).toBe('/repo/docs/vision')
 })
 
 test('a background command missing from the end-of-turn list has ended even without its notice', async ($, on) => {
@@ -307,17 +381,109 @@ test('following the latest run again shows no run once none is left', async ($, 
   expect(await screen($)).toEqual(['No vision run in this checkout yet.', ...CONTROLS])
 })
 
-test('after /clear an open pane keeps following the run', async ($, on) => {
+for (const source of ['clear', 'resume', 'fork'] as const) {
+  test(`after a ${source} an open pane keeps following the run`, async ($, on) => {
+    const clock = mock.clock(on, { now: 0 })
+    const w = world()
+    stubs(on, w, clock)
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+    await $.classic.SessionStart({ source })
+    w.state = STACK_START
+    w.mtimeMs = 2
+    await clock.advance(2000)
+    expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+  })
+}
+
+test('after /clear with no pane up the status line is taken down rather than left to go stale', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ isPaneListed: false })
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.command.run(command('min'))
+  await $.classic.SessionStart({ source: 'clear' })
+  await clock.advance(4000)
+  expect(w.statuses.at(-1)).toBe(undefined)
+})
+
+test('a reload keeps when the session started, so a run finished earlier in it stays on screen', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const w = world({ state: STACK_LATER.replace('Status: in_progress', 'Status: done'), mtimeMs: 1_005_000 })
+  stubs(on, w, clock)
+
+  await begin($)
+  await clock.advance(10_000)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
+  await clock.advance(2000)
+  expect(await screen($)).toContain('✓ finished')
+})
+
+test('close takes the pane and the status line down and stops refreshing', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const w = world()
   stubs(on, w, clock)
 
-  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/repo' })
-  await $.classic.SessionStart({ source: 'clear' })
+  await begin($)
+  await $.command.run(command('close'))
+  expect(w.closes).toBe(1)
+  expect(w.statuses.at(-1)).toBe(undefined)
+
   w.state = STACK_START
   w.mtimeMs = 2
+  await clock.advance(4000)
+  expect(await screen($)).toContain('▶ Task 2 — payment reissue')
+})
+
+test('running /vision-view while the pane is up opens it again, asking for the keyboard', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world()
+  stubs(on, w, clock)
+
+  await begin($)
+  await $.command.run(command(''))
+  expect(w.closes).toBe(1)
+  expect(w.opens.map(one => one.focus)).toEqual([true, true])
+})
+
+test('a permission dialog, which hides the pane while it is up, never leaves it saying it waits for an answer', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  stubs(on, world(), clock)
+
+  await begin($)
+  await $.turn.start({ text: 'clean the build', turnId: 't1' })
+  await $.tool.check({ tool: 'Bash', input: { command: 'rm -rf build' } })
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } })
+  expect(await screen($)).toContain('● working')
+})
+
+test('a question waits for an answer until it is answered', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  let answered = () => {}
+  const w = world({ answer: new Promise(resolve => (answered = resolve)) })
+  stubs(on, w, clock)
+
+  await begin($)
+  const asking = $.tool.call({ tool: 'AskUserQuestion', questions: [] })
   await clock.advance(2000)
-  expect(await screen($)).toContain('▶ Task 1: balance queries and limit checks')
+  expect(await screen($)).toContain('● waiting for your answer')
+
+  answered()
+  await asking
+  expect(await screen($)).toContain('● working')
+})
+
+test('only background commands the main session starts become jobs', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const w = world({ nextTaskId: 'bg6' })
+  stubs(on, w, clock)
+
+  await begin($)
+  const subagentCall = $.tool.call as (input: object) => Promise<unknown>
+  await subagentCall({ tool: 'Bash', command: 'npm test', description: 'Tests a subagent started', run_in_background: true, agentId: 'a1' })
+  await clock.advance(2000)
+  expect((await screen($)).some(one => one.includes('Tests a subagent started'))).toBe(false)
 })
 
 test('a timer resizes the pane only while it is on screen and never opens it', async ($, on) => {

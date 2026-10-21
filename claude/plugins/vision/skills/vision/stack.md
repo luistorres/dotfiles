@@ -74,7 +74,7 @@ open that PR until `drift` is ticked.
    stack, because that rewrites reviewed commits and force-pushes every PR above it.
 6. Open the PR as [4] says, with `--head <task branch>` and, for a dependent task,
    `--base <base branch>` and `Depends on #<n> (<base branch>).` in the body. Tick the task, record
-   its PR, and advance `Current:`.
+   its PR URL under `PR:`, and advance `Current:`.
 
 Tasks with no dependency between them can be built at the same time, each in its own worktree with
 its own implementer, dispatched in one message; never let two agents write to the same worktree. A
