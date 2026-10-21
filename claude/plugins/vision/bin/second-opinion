@@ -24,6 +24,7 @@ repo=$3
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next } !front' "$agent_file" > "$work/brief.md"
+effort=$(awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { exit } front && $1 == "effort:" { print $2 }' "$agent_file")
 
 # The repository may be someone else's PR, so nothing from it or from the user's settings is loaded:
 # its settings could redirect credentials or run commands, and the user's allow rules reach every file.
@@ -31,6 +32,7 @@ awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next }
 rc=0
 (cd "$repo" && claude -p \
   --model "$model" \
+  ${effort:+--effort "$effort"} \
   --setting-sources= \
   --tools Read,Grep,Glob \
   --permission-mode dontAsk \

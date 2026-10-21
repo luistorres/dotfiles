@@ -432,6 +432,110 @@ test_vision_second_opinion_needs_a_model() {
   check [ "$rc" -eq 3 ] && check [ ! -e "$d/args" ]
 }
 
+test_vision_second_opinion_runs_at_the_agent_effort() {
+  local d
+  d=$(opinion_dir) && answer "$d" "$REVIEW" &&
+    second_opinion "$d" code-reviewer "$d/run/inputs.md" "$d/repo" > /dev/null 2>&1 &&
+    check [ "$(flag_value "$d" --effort)" = high ]
+}
+
+# The stub gh answers from fixture files: search.json, view-<number>.json and reviews-<number>.json.
+watch_dir() {
+  local d
+  d=$(mktemp -d "$TMP_ROOT/watch.XXXXXX") && mkdir "$d/bin" "$d/projects" || return 1
+  cat > "$d/bin/gh" << 'EOF'
+#!/bin/bash
+expr() { local prev=""; for a in "$@"; do [ "$prev" = --jq ] && { printf '%s' "$a"; return; }; prev=$a; done; }
+case "$1 $2" in
+  "api user") echo me ;;
+  "search prs") jq -r "$(expr "$@")" "$STUB_DIR/search.json" ;;
+  "pr view") cat "$STUB_DIR/view-$3.json" ;;
+  api\ repos/*/reviews) n=${2%/reviews} && jq -r "$(expr "$@")" "$STUB_DIR/reviews-${n##*/}.json" 2> /dev/null || true ;;
+  *) echo "unexpected: gh $*" >&2 && exit 1 ;;
+esac
+EOF
+  chmod +x "$d/bin/gh" && echo '[]' > "$d/search.json" && echo "$d"
+}
+
+requested() {
+  jq --arg r "$2" --argjson n "$3" --arg author "${5:-someone}" --argjson draft "${6:-false}" \
+    '. + [{repository: {nameWithOwner: $r}, number: $n, isDraft: $draft, author: {login: $author}}]' \
+    "$1/search.json" > "$1/search.new" && mv "$1/search.new" "$1/search.json" &&
+    jq -n --arg head "$4" '{headRefOid: $head, baseRefOid: "b0", baseRefName: "main", title: "T", url: "u"}' > "$1/view-$3.json"
+}
+
+clone_of() { git init -q "$1/projects/$2" && git -C "$1/projects/$2" remote add origin "$3"; }
+
+watch() {
+  local d=$1
+  shift
+  STUB_DIR=$d PATH="$d/bin:$PATH" VISION_PR_WATCH_STATE="$d/state.json" VISION_CLONE_ROOTS="$d/projects" \
+    "$VISION/bin/pr-watch" "$@"
+}
+
+watched() { jq -r --arg k "$2" ".[\$k].$3" "$1/state.json"; }
+
+test_vision_watch_lists_new_requests_with_their_clones() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h5 && requested "$d" o/svc 6 h6 &&
+    requested "$d" o/api 7 h7 me && requested "$d" o/api 8 h8 someone true &&
+    clone_of "$d" app git@github.com:O/Api.git && mkdir "$d/projects/team" &&
+    clone_of "$d" team/svc https://github.com/o/svc && watch "$d" scan > "$d/out" 2> /dev/null &&
+    check [ "$(wc -l < "$d/out")" -eq 2 ] &&
+    check jq -e --arg c "$d/projects/app" 'select(.number == 5) | .key == "o/api#5" and .head == "h5" and .base == "b0"
+      and .clone == $c' "$d/out" > /dev/null &&
+    check jq -e --arg c "$d/projects/team/svc" 'select(.number == 6) | .clone == $c' "$d/out" > /dev/null
+}
+
+test_vision_watch_skips_a_head_it_already_reviewed() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' clean h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    requested "$d" o/api 5 h2 && watch "$d" scan > "$d/out" 2> /dev/null && check grep -q '"head":"h2"' "$d/out"
+}
+
+test_vision_watch_skips_a_head_the_owner_reviewed() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && clone_of "$d" api git@github.com:o/api.git &&
+    echo '[{"user": {"login": "other"}, "commit_id": "h0"}, {"user": {"login": "me"}, "commit_id": "h1"}]' > "$d/reviews-5.json" &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = already_reviewed ]
+}
+
+test_vision_watch_caps_automatic_reviews() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h3 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" record 'o/api#5' posted h1 https://x/r1 && watch "$d" record 'o/api#5' clean h2 &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = capped ] && check [ "$(watched "$d" 'o/api#5' head_sha)" = h3 ] &&
+    check [ "$(watched "$d" 'o/api#5' review_count)" -eq 2 ] &&
+    watch "$d" scan --force > "$d/out" 2> /dev/null && check grep -q '"head":"h3"' "$d/out"
+}
+
+test_vision_watch_retries_a_request_once_it_is_cloned() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = skipped_not_cloned ] &&
+    clone_of "$d" api git@github.com:o/api.git && watch "$d" scan > "$d/out" 2> /dev/null && check [ -s "$d/out" ]
+}
+
+test_vision_watch_seeds_and_dry_runs_without_reviewing() {
+  local d
+  d=$(watch_dir) && requested "$d" o/api 5 h1 && requested "$d" o/svc 6 h6 && clone_of "$d" api git@github.com:o/api.git &&
+    watch "$d" scan --dry-run > "$d/out" 2> /dev/null && check [ -s "$d/out" ] && check [ ! -e "$d/state.json" ] &&
+    watch "$d" scan --seed > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ] &&
+    check [ "$(watched "$d" 'o/api#5' outcome)" = seeded ] &&
+    watch "$d" scan > "$d/out" 2> /dev/null && check [ ! -s "$d/out" ]
+}
+
+test_vision_watch_counts_only_completed_reviews() {
+  local d
+  d=$(watch_dir) && watch "$d" record 'o/api#5' error h1 && check [ "$(watched "$d" 'o/api#5' review_count)" = null ] &&
+    watch "$d" record 'o/api#5' posted h1 https://x/r1 && check [ "$(watched "$d" 'o/api#5' review_count)" -eq 1 ] &&
+    check [ "$(watched "$d" 'o/api#5' review_url)" = https://x/r1 ] &&
+    check fails watch "$d" record 'o/api#5' capped h1
+}
+
 gate_repo() {
   local d
   d=$(mktemp -d "$TMP_ROOT/gate.XXXXXX") &&

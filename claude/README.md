@@ -17,6 +17,7 @@
 - Optionally, in `~/.zshrc.local`, models `claude --model` can reach:
   - `VISION_SECOND_OPINION_MODEL`, another vendor's model that vision uses for every plan review and as the second reviewer on standard- and high-risk changes. When it is unset, vision runs a Claude pass instead.
   - `VISION_EXTRA_REVIEW_MODEL`, an inexpensive model that vision runs as one extra review pass on high-risk changes and plans. When it is unset, vision runs a Claude pass instead.
+  - `VISION_CLONE_ROOTS`, the colon-separated directories under which `pr-watch` looks for local clones of the repositories whose pull requests request your review. It defaults to `~/projects`.
 
 The installer warns about each missing optional tool and carries on.
 
@@ -40,9 +41,10 @@ Then restart Claude Code, or run `/reload-plugins`. The installer needs network 
 
 `plugins/vision` is the harness that ships coding work. Each part is the kind of component it is for a reason:
 
-- **Skills** are procedures, loaded only when used: `vision` runs a task from framing to PR, and `review` sizes and runs adversarial review. The stack and issue-set procedures are reference files the `vision` skill opens only when a task needs them.
-- **Agents** are for work that must not share the author's context: `code-reviewer` and `plan-reviewer` can only read and search, and `implementer` builds one task of a stack in its own context. Their prompts live in the agent files, so the orchestrator passes only each run's inputs.
+- **Skills** are procedures, loaded only when used: `vision` runs a task from framing to PR, `review` sizes and runs adversarial review, and `pr-watch`, driven by `/loop`, reviews the pull requests that request your review and comments only when it has something new. The stack and issue-set procedures are reference files the `vision` skill opens only when a task needs them.
+- **Agents** are for work that must not share the author's context: `code-reviewer` and `plan-reviewer` can only read and search, `implementer` builds one task of a stack in its own context, and `pr-reviewer` reviews one pull request for `pr-watch`, so its reading never reaches the watching session. Their prompts live in the agent files, so the orchestrator passes only each run's inputs.
 - **`bin/second-opinion`** runs a reviewer's brief in a separate `claude -p` session on the model in `VISION_SECOND_OPINION_MODEL` (or `--model`), with read-only tools and no hooks or MCP servers.
+- **`bin/pr-watch`** finds the pull requests awaiting your review and applies the watcher's rules (new heads only, at most two automatic reviews, no drafts) against a state file, so those rules are code with tests rather than sentences in a prompt.
 - **`hooks/pr-gate`** blocks `gh pr create` while the run's state file shows its review, fix or verify step unticked. A rule that must always hold is a hook, not a sentence in a prompt.
 
 Run state lives in `docs/vision/` of the repository being worked on; `vision-view` shows the active run. On a machine that ran the older `flow` plugins, the template disables them, and the installer removes skill links that point at skills no longer in this folder.
