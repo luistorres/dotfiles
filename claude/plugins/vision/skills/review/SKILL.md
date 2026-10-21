@@ -71,8 +71,8 @@ Acceptance criteria:
 ```
 
 A verify pass adds `Verify pass — fixes for:` and the findings, one per line. A plan review writes
-`<dir>/inputs-plan.md` instead, naming `Plan:` (and `Spec:` if one exists) with the brief and
-criteria, and no diff.
+`<dir>/inputs-plan.md` instead, with the `Repository:` line, `Plan:` (and `Spec:` if one exists) as
+absolute paths into that checkout, the brief and the criteria, and no diff.
 
 ## Dispatch
 

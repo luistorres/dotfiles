@@ -3,8 +3,8 @@ name: code-reviewer
 description: >
   Adversarial, read-only reviewer of one diff. Dispatched by vision:review, which
   passes the inputs file's text as the prompt: repository, diff file, task, acceptance
-  criteria, and whether the diff touches a user-facing surface. Not for plans; use
-  plan-reviewer for those.
+  criteria, and whether the diff touches a user-facing surface. Not for a plan that
+  nothing has built yet, even one that arrives as a diff; use plan-reviewer.
 tools: Read, Grep, Glob
 model: opus
 effort: high
